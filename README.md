@@ -1,0 +1,49 @@
+# Chess Analysis App
+[https://stockfishchess.org/download/](https://stockfishchess.org/download/)
+
+docker build -t chess-engine-analyzer --build-arg STOCKFISH_BINARY=stockfish-ubuntu-x86-64-avx2 .
+docker run --name chess-engine-analyzer -p 5000:5000 chess-engine-analyzer
+
+
+# Chess Analysis App
+
+A real-time chess analysis web app powered by Stockfish engine, Flask backend, and a reactive browser UI. It supports move validation, PGN import, opening detection, blunder classification, and live evaluation visualization.
+
+---
+
+## ⚙️ Features
+
+- Live board powered by chessboard.js  
+- Engine analysis via Stockfish  
+- Top-3 move suggestions with continuations  
+- Eval bar (centipawn + mate detection)  
+- Move classification (Blunder → Brilliant)  
+- Opening recognition from PGN database  
+- PGN loader with timeline navigation  
+- Variation tracking (main line vs deviations)  
+- Legal move validation API  
+
+---
+
+## 🚀 Quick Start (Docker)
+
+### 1. Build image
+
+```bash
+docker build --build-arg STOCKFISH_BINARY=stockfish/stockfish-ubuntu-x86-64-avx2 -t chess-engine-analyzer .
+```
+  Replace STOCKFISH_BINARY with your Stockfish binary path.
+
+### 2. Run container
+
+```bash
+docker run --name chess-engine-analyzer -p 5000:5000 chess-engine-analyzer
+```
+
+### 3. Open app
+http://localhost:5000
+
+
+## Requirements
+- Docker (or just set stockfish binary path in python and run from python)
+- Stockfish [https://stockfishchess.org/download/](https://stockfishchess.org/download/)

@@ -1,0 +1,552 @@
+"""
+Chess Analysis App - Flask Backend.
+
+Serves a chessboard.js frontend and communicates with the Stockfish engine
+to analyze chess positions and validate moves.
+"""
+
+import atexit
+import io
+import json
+import os
+from collections import OrderedDict
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+import chess
+import chess.engine
+import chess.pgn
+from flask import Flask, Response, jsonify, render_template, request
+from flask.typing import ResponseReturnValue
+
+app = Flask(__name__)
+
+# --- CONFIG ---------------------------------------------------------------
+
+# Using os.getenv to retrieve the environment variable, but wrapping it in pathlib.Path
+STOCKFISH_PATH: Path = Path(os.getenv(
+    "STOCKFISH_PATH",
+    r"windows_stockfish\stockfish-windows-x86-64-avx2.exe"
+))
+
+PIECE_VALUES: Dict[int, int] = {
+    chess.PAWN: 1,
+    chess.KNIGHT: 3,
+    chess.BISHOP: 3,
+    chess.ROOK: 5,
+    chess.QUEEN: 9,
+    chess.KING: 0
+}
+
+OPENINGS_MAP: Dict[str, List[str]] = {}
+INVALID_OPENINGS: Dict[str, List[Dict[str, str]]] = {}
+
+
+def is_real_sacrifice(board: chess.Board, move: chess.Move) -> bool:
+    """
+    Detects if a move is a real sacrifice, ignoring false positives such as:
+    - Simple attacks
+    - Protected pieces
+    - Mates (illegal captures)
+
+    Args:
+        board (chess.Board): The current board state before the move.
+        move (chess.Move): The move to evaluate.
+
+    Returns:
+        bool: True if the move is considered a genuine sacrifice, False otherwise.
+    """
+    moving_piece = board.piece_at(move.from_square)
+    if not moving_piece:
+        return False
+
+    my_value: int = PIECE_VALUES.get(moving_piece.piece_type, 0)
+
+    captured_piece = board.piece_at(move.to_square)
+    captured_value: int = PIECE_VALUES.get(captured_piece.piece_type, 0) if captured_piece else 0
+
+    temp_board: chess.Board = board.copy()
+    temp_board.push(move)
+
+    moved_square: chess.Square = move.to_square
+    opponent_color: chess.Color = temp_board.turn
+    my_color: chess.Color = not opponent_color
+
+    if temp_board.is_checkmate():
+        return False
+
+    legal_enemy_attackers: List[chess.Square] = []
+
+    for attacker_sq in temp_board.attackers(opponent_color, moved_square):
+        attacker_piece = temp_board.piece_at(attacker_sq)
+        if not attacker_piece:
+            continue
+
+        test_board: chess.Board = temp_board.copy()
+        test_move: chess.Move = chess.Move(attacker_sq, moved_square)
+
+        if test_move in test_board.legal_moves:
+            legal_enemy_attackers.append(attacker_sq)
+
+    attacked_legally: bool = len(legal_enemy_attackers) > 0
+    defended_by_me: bool = temp_board.is_attacked_by(my_color, moved_square)
+
+    if attacked_legally and my_value > captured_value:
+        if not defended_by_me:
+            return True
+
+        cheapest_attacker: int = min(
+            PIECE_VALUES[temp_board.piece_at(sq).piece_type]  # type: ignore
+            for sq in legal_enemy_attackers
+            if temp_board.piece_at(sq) is not None
+        )
+
+        if cheapest_attacker < my_value:
+            return True
+
+    return False
+
+
+def load_openings_database() -> None:
+    """
+    Loads the chess openings database from a JSON file into memory.
+    Validates sequences and populates OPENINGS_MAP and INVALID_OPENINGS.
+    """
+    global OPENINGS_MAP, INVALID_OPENINGS
+    
+    # Safely handle the static folder path
+    static_folder: str = app.static_folder if app.static_folder else "static"
+    path: Path = Path(static_folder) / "openings.json"
+
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            data: Dict[str, Union[str, List[str]]] = json.load(f)
+
+        for opening_name, sequences in data.items():
+            if isinstance(sequences, str):
+                sequences = [sequences]
+
+            for seq in sequences:
+                board = chess.Board()
+                tokens: List[str] = seq.replace("\n", " ").split()
+                san_moves: List[str] = [
+                    t for t in tokens 
+                    if not t.endswith(".") and not t.replace(".", "").isdigit()
+                ]
+
+                try:
+                    for san in san_moves:
+                        board.push_san(san)
+
+                    # Store the first 3 parts of the FEN (pieces, active color, castling)
+                    fen_key: str = " ".join(board.fen().split()[:3])
+
+                    if fen_key not in OPENINGS_MAP:
+                        OPENINGS_MAP[fen_key] = []
+
+                    if opening_name not in OPENINGS_MAP[fen_key]:
+                        OPENINGS_MAP[fen_key].append(opening_name)
+
+                except Exception as e:
+                    INVALID_OPENINGS.setdefault(opening_name, []).append({
+                        "sequence": seq,
+                        "error": str(e)
+                    })
+
+        print(f"Loaded openings: {len(OPENINGS_MAP)} positions")
+        print(f"Invalid openings: {len(INVALID_OPENINGS)} entries")
+
+        if INVALID_OPENINGS:
+            print("\n❌ INVALID OPENINGS DETECTED:")
+            for k, v in INVALID_OPENINGS.items():
+                print(f"- {k}: {len(v)} error(s)")
+                for err in v:
+                    print(f"   -> {err['error']}")
+
+    except Exception as e:
+        print(f"Error loading openings database: {e}")
+
+
+# Initialize the database on startup
+with app.app_context():
+    load_openings_database()
+
+
+# --- ENGINE (Singleton) ---------------------------------------------------
+
+_engine: Optional[chess.engine.SimpleEngine] = None
+
+
+def get_engine() -> chess.engine.SimpleEngine:
+    """
+    Retrieves the active Stockfish engine instance. 
+    Initializes it if it doesn't already exist.
+
+    Returns:
+        chess.engine.SimpleEngine: The active Stockfish engine.
+    """
+    global _engine
+    if _engine is None:
+        _engine = chess.engine.SimpleEngine.popen_uci(str(STOCKFISH_PATH))
+    return _engine
+
+
+@atexit.register
+def _close_engine() -> None:
+    """
+    Ensures the engine is properly closed when the application exits.
+    """
+    global _engine
+    if _engine is not None:
+        try:
+            _engine.quit()
+        except Exception:
+            pass
+
+
+# --- MOVE CLASSIFICATION --------------------------------------------------
+
+def classify_move(score_diff: float, is_sacrifice: bool = False) -> Tuple[str, str, str]:
+    """
+    Classifies a move based on the engine score difference and sacrifice status.
+
+    Args:
+        score_diff (float): Centipawn evaluation drop after the move.
+        is_sacrifice (bool, optional): Whether the move is a real sacrifice. Defaults to False.
+
+    Returns:
+        Tuple[str, str, str]: The label, symbol, and hex color code for the UI.
+    """
+    if is_sacrifice and score_diff < 20:
+        return "Brilliant", "!!", "#15a2b8"
+    if score_diff <= 5:
+        return "Best", "★", "#26bbff"
+    if score_diff < 30:
+        return "Excellent", "++", "#96bc4b"
+    if score_diff < 80:
+        return "Good", "+", "#96bc4b"
+    if score_diff < 150:
+        return "Inaccuracy", "?!", "#f0c15c"
+    if score_diff < 300:
+        return "Mistake", "?", "#e6912c"
+    return "Blunder", "??", "#b33430"
+
+
+def score_to_float(score_obj: chess.engine.PovScore, pov_white: bool = True) -> float:
+    """
+    Converts an engine PovScore object into a float value representing pawns.
+
+    Args:
+        score_obj (chess.engine.PovScore): The score object returned by the engine.
+        pov_white (bool, optional): If True, returns score from White's POV. Defaults to True.
+
+    Returns:
+        float: The evaluation in pawns.
+    """
+    if pov_white:
+        cp = score_obj.white().score(mate_score=10000)
+    else:
+        cp = score_obj.relative.score(mate_score=10000)
+        
+    return cp / 100.0 if cp is not None else 0.0
+
+
+# --- ROUTES ---------------------------------------------------------------
+
+@app.route("/")
+def index() -> str:
+    """Renders the main application page."""
+    return render_template("index.html")
+
+
+@app.route("/api/list_openings")
+def list_openings() -> Response:
+    """Returns the raw openings JSON dataset."""
+    static_folder: str = app.static_folder if app.static_folder else "static"
+    path: Path = Path(static_folder) / "openings.json"
+    
+    with path.open("r", encoding="utf-8") as f:
+        return jsonify(json.load(f))
+
+
+def sort_opening_dict(openings: Dict[str, List[str]]) -> OrderedDict[str, List[str]]:
+    """
+    Sorts the openings dictionary for deterministic querying.
+
+    Args:
+        openings (Dict[str, List[str]]): The unordered openings map.
+
+    Returns:
+        OrderedDict[str, List[str]]: Openings sorted by sequence length, then alphabetically.
+    """
+    return OrderedDict(
+        sorted(
+            openings.items(),
+            key=lambda item: (
+                len(item[1][0]),   # First line length
+                item[0].lower()    # Alphabetical order
+            )
+        )
+    )
+
+SORTED_OPENINGS_MAP: OrderedDict[str, List[str]] = sort_opening_dict(OPENINGS_MAP)
+
+
+def get_best_opening_name(fen: str) -> str:
+    """
+    Matches a given FEN string to the most relevant opening name.
+
+    Args:
+        fen (str): The FEN string to check.
+
+    Returns:
+        str: The matched opening name, or "Custom position" / "Initial Position".
+    """
+    parts: List[str] = fen.split()
+    fen_key_3: str = " ".join(parts[:3])
+    fen_key_2: str = " ".join(parts[:2])
+
+    names: List[str] = SORTED_OPENINGS_MAP.get(fen_key_3) or SORTED_OPENINGS_MAP.get(fen_key_2) or []
+    
+    if not names:
+        return "Custom position"
+
+    filtered_names: List[str] = [n for n in names if n.lower() != "initial position"]
+    
+    if not filtered_names:
+        return "Initial Position"
+
+    filtered_names.sort()
+    return filtered_names[0]
+
+
+@app.route("/api/analyze", methods=["POST"])
+def analyze() -> Response:
+    """
+    Analyzes a given board position using Stockfish.
+    
+    Expected JSON Body:
+        fen (str): The current position.
+        depth (int): Engine analysis depth (default: 14).
+        prev_fen (str|None): The previous position (for last move classification).
+        last_move_uci (str|None): The last move played.
+
+    Returns:
+        Response: JSON payload containing top 3 moves, evaluation, classification, and opening info.
+    """
+    data: Dict[str, Any] = request.get_json(force=True)
+    fen: str = data.get("fen", "")
+    depth: int = int(data.get("depth", 14))
+    prev_fen: Optional[str] = data.get("prev_fen")
+    last_move_uci: Optional[str] = data.get("last_move_uci")
+
+    board = chess.Board(fen)
+    detected_opening: str = get_best_opening_name(fen)
+    
+    if board.fullmove_number <= 1 and detected_opening.lower() == "custom position":
+        detected_opening = "Initial Position"
+
+    engine = get_engine()
+
+    # --- Top 3 moves on current position ---
+    info_list = engine.analyse(
+        board,
+        chess.engine.Limit(depth=depth),
+        multipv=3,
+    )
+
+    top_moves: List[Dict[str, Any]] = []
+    for entry in info_list:
+        if "pv" not in entry or not entry["pv"]:
+            continue
+            
+        move: chess.Move = entry["pv"][0]
+        score: chess.engine.Score = entry["score"].white()
+
+        uci_str: str = move.uci()          # e.g., "e2e4"
+        move_from: str = uci_str[:2]       # "e2"
+        move_to: str = uci_str[2:4]        # "e4"
+
+        pv_moves: List[chess.Move] = entry.get("pv", [])
+        continuation_san: List[str] = []
+        temp_board: chess.Board = board.copy()
+
+        for pv_move in pv_moves[:10]: 
+            continuation_san.append(temp_board.san(pv_move))
+            temp_board.push(pv_move)
+
+        cp: float = 0.0
+        if score.is_mate():
+            mate_moves = score.mate()
+            if mate_moves is not None:
+                cp = 99.0 if mate_moves > 0 else -99.0
+        else:
+            engine_score = score.score()
+            if engine_score is not None:
+                cp = engine_score / 100.0
+
+        top_moves.append({
+            "uci": uci_str,
+            "san": board.san(move),
+            "from": move_from,
+            "to": move_to,
+            "score": cp,
+            "continuation": " ".join(continuation_san)
+        })
+
+    eval_score: float = top_moves[0]["score"] if top_moves else 0.0
+
+    # --- Classify the last move (if any) ---
+    classification: Optional[Dict[str, Any]] = None
+    if prev_fen and last_move_uci:
+        try:
+            prev_board = chess.Board(prev_fen)
+            last_move = chess.Move.from_uci(last_move_uci)
+
+            prev_info = engine.analyse(prev_board, chess.engine.Limit(depth=depth))
+            best_eval_prev: Optional[int] = prev_info["score"].relative.score(mate_score=10000)
+
+            actual_eval: Optional[int] = None
+            if info_list and "score" in info_list[0]:
+                actual_eval_raw = info_list[0]["score"].relative.score(mate_score=10000)
+                if actual_eval_raw is not None:
+                    actual_eval = -actual_eval_raw
+
+            diff: float = float((best_eval_prev or 0) - (actual_eval or 0))
+            
+            is_sac: bool = is_real_sacrifice(prev_board, last_move)
+            label, symbol, color = classify_move(diff, is_sac)
+            
+            classification = {
+                "label": label,
+                "symbol": symbol,
+                "color": color,
+                "diff_cp": diff,
+            }
+        except Exception as e:
+            classification = {"error": str(e)}
+
+    return jsonify({
+        "fen": fen,
+        "eval": eval_score,
+        "top_moves": top_moves,
+        "classification": classification,
+        "opening": detected_opening, 
+        "turn": "white" if board.turn else "black",
+        "is_game_over": board.is_game_over(),
+        "legal_moves": [m.uci() for m in board.legal_moves],
+    })
+
+
+@app.route("/api/legal_moves", methods=["POST"])
+def legal_moves() -> Response:
+    """
+    Performs a quick legality check for a single move.
+    Primarily used by chessboard.js during the 'onDrop' event.
+
+    Expected JSON Body:
+        fen (str): Current board position.
+        from (str): Starting square.
+        to (str): Target square.
+        promotion (str, optional): Promotion piece type (default: "q").
+
+    Returns:
+        Response: JSON payload indicating if the move is legal and the resulting state.
+    """
+    data: Dict[str, Any] = request.get_json(force=True)
+    fen: str = data.get("fen", "")
+    from_sq: str = data.get("from", "")
+    to_sq: str = data.get("to", "")
+    promotion: str = data.get("promotion", "q")
+
+    try:
+        board = chess.Board(fen)
+    except ValueError:
+        return jsonify({
+            "legal": False,
+            "error": "Invalid FEN"
+        })
+
+    move_uci: str = f"{from_sq}{to_sq}"
+    try:
+        move: chess.Move = chess.Move.from_uci(move_uci)
+        if move not in board.legal_moves:
+            # Fallback for promotion handling
+            move = chess.Move.from_uci(move_uci + promotion)
+    except ValueError:
+        try:
+            move = chess.Move.from_uci(move_uci + promotion)
+        except ValueError:
+            return jsonify({"legal": False})
+
+    if move not in board.legal_moves:
+        return jsonify({"legal": False})
+
+    san: str = board.san(move)
+    board.push(move)
+    return jsonify({
+        "legal": True,
+        "san": san,
+        "uci": move.uci(),
+        "new_fen": board.fen(),
+        "is_game_over": board.is_game_over(),
+    })
+
+@app.route("/api/load_pgn", methods=["POST"])
+def load_pgn() -> ResponseReturnValue:
+    """
+    Loads and parses a PGN string into individual moves and FEN states.
+
+    Expected JSON Body:
+        pgn (str): The raw PGN text.
+
+    Returns:
+        ResponseReturnValue: JSON payload with moves, FEN history, and game headers and eventual error code.
+    """
+    data: Dict[str, Any] = request.get_json(force=True)
+    pgn_text: str = data.get("pgn", "").strip()
+
+    if not pgn_text:
+        return jsonify({"error": "Empty PGN"}), 400
+
+    try:
+        game = chess.pgn.read_game(io.StringIO(pgn_text))
+
+        if game is None:
+            return jsonify({"error": "Invalid PGN"}), 400
+
+        board = game.board()
+        moves = []
+        fens = [board.fen()]
+
+        found_moves = False
+
+        for mv in game.mainline_moves():
+            found_moves = True
+
+            san = board.san(mv)  # può fallire
+            moves.append({
+                "uci": mv.uci(),
+                "san": san,
+            })
+
+            board.push(mv)
+            fens.append(board.fen())
+
+        if not found_moves:
+            return jsonify({"error": "No valid moves found in PGN"}), 400
+
+        return jsonify({
+            "start_fen": game.board().fen(),
+            "moves": moves,
+            "fens": fens,
+            "headers": dict(game.headers),
+        })
+
+    except Exception as e:
+        return jsonify({
+            "error": f"PGN parsing failed: {str(e)}"
+        }), 400
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
