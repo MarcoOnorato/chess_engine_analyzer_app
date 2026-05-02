@@ -56,3 +56,8 @@ http://localhost:5000
 ## Requirements
 - Docker (or just set stockfish binary path in python and run from python)
 - Stockfish [https://stockfishchess.org/download/](https://stockfishchess.org/download/)
+
+## Credits
+For openings:
+- https://github.com/tomgp/chess-canvas
+- https://www.pgnmentor.com/files.html#openings
