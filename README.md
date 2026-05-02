@@ -27,20 +27,29 @@ A real-time chess analysis web app powered by Stockfish engine, Flask backend, a
 
 ## 🚀 Quick Start (Docker)
 
-### 1. Build image
+### 1. Clone repo
+```bash
+git clone https://github.com/MarcoOnorato/chess_engine_analyzer_app.git
+```
+
+### 2. Get stockfish
+- download from [https://stockfishchess.org/download/](https://stockfishchess.org/download/) (container is ubuntu, local development with python is your os)
+- extract and copy into project folder
+
+### 2. Build image
 
 ```bash
 docker build --build-arg STOCKFISH_BINARY=stockfish/stockfish-ubuntu-x86-64-avx2 -t chess-engine-analyzer .
 ```
-  Replace STOCKFISH_BINARY with your Stockfish binary path.
+  Replace STOCKFISH_BINARY with your Stockfish binary relative path, sould always be something like "stockfish/stockfish-version".
 
-### 2. Run container
+### 3. Run container
 
 ```bash
 docker run --name chess-engine-analyzer -p 5000:5000 chess-engine-analyzer
 ```
 
-### 3. Open app
+### 4. Open app
 http://localhost:5000
 
 
