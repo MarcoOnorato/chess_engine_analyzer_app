@@ -1,6 +1,7 @@
 # Chess Analysis App
 
 A real-time chess analysis web app powered by Stockfish engine, Flask backend, and a reactive browser UI. It supports move validation, PGN import, opening detection, blunder classification, and live evaluation visualization.
+
 ![DEMO](demo.gif)
 ---
 
