@@ -87,7 +87,7 @@
     align-items: stretch;
     gap: 15px;
     width: 100%;
-    max-width: 80vh;
+    max-width: 70vh;
     justify-content: center;
   }
 
@@ -248,6 +248,7 @@
     flex-grow: 1;
     font-size: 0.95em;
     line-height: 1.8;
+    max-height: 38vh;
   }
 
   .history-row {
@@ -353,6 +354,51 @@
   .promo-piece:hover { background: #555; }
   .promo-piece img { width: 60px; height: 60px; }
   .promo-cancel { display: block; width: 100%; margin-top: 15px; padding: 10px; background: #555; color: white; border: none; border-radius: 4px; cursor: pointer;}
+
+  .postgame-panel {
+    width: 100%;
+    margin-top: 15px; /* Leggermente ridotto */
+    padding: 10px 15px; /* Spaziatura ottimizzata */
+  }
+
+  .accuracy-row-inline {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    background: #1b1b1b;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 8px 15px;
+    margin-bottom: 12px;
+  }
+
+  .accuracy-inline {
+    font-size: 1.1em;
+    font-weight: bold;
+  }
+
+  .acc-label {
+    font-size: 0.85em;
+    color: #888;
+    text-transform: uppercase;
+    margin-right: 5px;
+    font-weight: normal;
+  }
+
+  /* Mantengo i tuoi colori originali */
+  .white-text #whiteAccuracy { color: #26bbff; }
+  .black-text #blackAccuracy { color: #f0c15c; }
+
+  .chart-container {
+    width: 100%;
+    height: 15vh; /* Altezza drasticamente ridotta per occupare meno spazio */
+  }
+
+  #evalChart {
+    width: 100% !important;
+    height: 100% !important;
+  }
+
 </style>
 </head>
 <body>
@@ -374,6 +420,24 @@
       <div id="board"></div>
     </div>
     <div id="status" style="margin-top: 10px; color: #aaa;"></div>
+    <div class="postgame-panel card">
+      <div class="accuracy-row-inline">
+        <div class="accuracy-inline white-text">
+          <span class="acc-label">White Accuracy:</span>
+          <span id="whiteAccuracy">--%</span>
+        </div>
+        <div class="accuracy-inline black-text">
+          <span class="acc-label">Black Accuracy:</span>
+          <span id="blackAccuracy">--%</span>
+        </div>
+      </div>
+    
+      <div class="chart-container">
+        <canvas id="evalChart"></canvas>
+      </div>
+    </div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <div id="loadingOverlay" class="hidden">
       <div class="spinner"></div>
       <p id="loadingText" style="margin-top: 15px; font-weight: bold; color: #fff;">Evaluating game...</p>
@@ -427,13 +491,13 @@
         <div class="history-section">
           <h3>🧪 Deviation</h3>
           <div id="historyVariations" class="history-table"></div>
+          <button id="undoBtn" style="margin-top:15px; align-self:flex-start; display:flex;">
+            ⬅ Undo Last Deviation Move
+          </button>
         </div>
 
       </div>
 
-      <button id="undoBtn" style="margin-top:15px; align-self:flex-start; display:none;">
-        ⬅ Undo
-      </button>
     </div>
 
     <div class="card">
@@ -509,10 +573,161 @@ let currentMainlineIndex = 0;
 let currentVariationIndex = -1;
 /** @type {number} */
 let deviationStartIndex = 0;
+let evalHistory = [];
+let evalChart = null;
 
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
+
+function moveAccuracy(cpLoss) {
+  return Math.max(0, Math.min(100, 100 * Math.exp(-0.0045 * cpLoss)));
+}
+
+function calculateGameAccuracy() {
+  let whiteScores = [];
+  let blackScores = [];
+
+  historyMain.forEach((move, i) => {
+    if (move.cpLoss == null) return;
+
+    const acc = moveAccuracy(move.cpLoss);
+
+    if (i % 2 === 0) {
+      whiteScores.push(acc);
+    } else {
+      blackScores.push(acc);
+    }
+  });
+
+  const avg = arr =>
+    arr.length
+      ? (arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1)
+      : "--";
+
+  document.getElementById("whiteAccuracy").textContent = `${avg(whiteScores)}%`;
+  document.getElementById("blackAccuracy").textContent = `${avg(blackScores)}%`;
+}
+
+function renderEvalChart() {
+  const ctx = document.getElementById("evalChart").getContext("2d");
+
+  const labels = historyMain.map((_, i) => i + 1);
+  const data = historyMain.map(m => {
+    let val = m.eval ?? 0;
+    return Math.max(-10, Math.min(10, val));
+  });
+
+  if (evalChart) {
+    evalChart.destroy();
+  }
+
+  evalChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{
+        data,
+        tension: 0.25,
+        fill: true,
+        borderColor: "#26bbff",
+        backgroundColor: "rgba(38, 187, 255, 0.1)",
+        pointRadius: (context) => {
+          return context.dataIndex === (currentMainlineIndex - 1) ? 6 : 3;
+        },
+        pointBackgroundColor: (context) => {
+          return context.dataIndex === (currentMainlineIndex - 1) ? "#ffffff" : "#26bbff";
+        },
+        pointBorderColor: (context) => {
+          return context.dataIndex === (currentMainlineIndex - 1) ? "#ffffff" : "#26bbff";
+        },
+        pointHoverRadius: 7
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      onClick: function(evt, elements) {
+        if (!elements.length) return;
+        const clickedIndex = elements[0].index;
+        jumpToMainLineFromChart(clickedIndex);
+      },
+      plugins: {
+        legend: {
+          display: false
+        },
+        tooltip: {
+          displayColors: false,
+          callbacks: {
+            title: () => null,
+            label: function(context) {
+              const move = historyMain[context.dataIndex];
+              if (!move) return "";
+              return move.san; 
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: "#888" },
+          grid: { color: "rgba(255,255,255,0.05)" }
+        },
+        y: {
+          min: -10,
+          max: 10,
+          ticks: {
+            color: "#888",
+            callback: function(value) { return value > 0 ? `+${value}` : value; }
+          },
+          grid: { color: "rgba(255,255,255,0.05)" }
+        }
+      }
+    }
+  });
+}
+
+// ============================================================================
+// FORCE RETURN TO MAIN LINE FROM CHART
+// ============================================================================
+
+function jumpToMainLineFromChart(index) {
+
+// -------------------------------------------------------------------------
+// RESET DEVIATION
+// -------------------------------------------------------------------------
+historyVariations = [];
+deviationStartIndex = 0;
+in_deviation = false;
+currentVariationIndex = -1;
+
+// -------------------------------------------------------------------------
+// RESTORE MAIN LINE TO TARGET POINT
+// -------------------------------------------------------------------------
+currentMainlineIndex = index + 1;
+pgn_index = index + 1;
+
+game_fen = historyMain[index].fen_after;
+
+// -------------------------------------------------------------------------
+// UPDATE BOARD
+// -------------------------------------------------------------------------
+board.position(fenToPos(game_fen));
+
+// -------------------------------------------------------------------------
+// UI REFRESH
+// -------------------------------------------------------------------------
+renderHistory();
+updatePgnNav();
+
+// -------------------------------------------------------------------------
+// ANALYZE POSITION
+// -------------------------------------------------------------------------
+const prev_fen = historyMain[index].fen_before;
+const last_move_uci = historyMain[index].uci;
+
+analyzeCurrentPosition(prev_fen, last_move_uci);
+}
 
 /* Deviations PGN format */
 
@@ -704,12 +919,28 @@ function renderMain() {
     return;
   }
 
-  const fullLine = [
-    ...historyMain.slice(0, deviationStartIndex),
-    ...historyVariations
-  ];
+  // --- Header / indicator ---
+  const prefix = document.createElement("div");
+  prefix.className = "variation-prefix";
+  prefix.textContent =
+    `Following main line until move ${Math.ceil(deviationStartIndex / 2)}`;
+  div.appendChild(prefix);
+
+  const inheritedLine = historyMain.slice(0, deviationStartIndex);
+  const deviationLine = historyVariations;
+
+  const fullLine = [...inheritedLine, ...deviationLine];
 
   for (let i = 0; i < fullLine.length; i += 2) {
+
+    // --- Deviation separator ---
+    if (i === deviationStartIndex || i + 1 === deviationStartIndex) {
+      const separator = document.createElement("div");
+      separator.className = "deviation-separator";
+      separator.textContent = "↳ Deviation starts";
+      div.appendChild(separator);
+    }
+
     const row = document.createElement("div");
     row.className = "history-row";
 
@@ -719,20 +950,28 @@ function renderMain() {
     numCell.className = "move-number";
     numCell.textContent = `${moveNumber}.`;
 
+    // ---------------- WHITE ----------------
     const whiteCell = document.createElement("div");
     whiteCell.className = "move-cell";
 
     const whiteMove = fullLine[i];
+
     if (whiteMove) {
       let txt = whiteMove.san;
+
       if (whiteMove.evalData?.symbol && whiteMove.evalData.symbol !== "–") {
         txt += whiteMove.evalData.symbol;
       }
 
       whiteCell.textContent = txt;
 
-      if (i >= deviationStartIndex) {
+      const isInherited = i < deviationStartIndex;
+
+      if (isInherited) {
+        whiteCell.classList.add("inherited-move");
+      } else {
         const localIndex = i - deviationStartIndex;
+
         whiteCell.onclick = () => jumpToMove(localIndex, false);
 
         if (currentVariationIndex - 1 === localIndex) {
@@ -745,20 +984,28 @@ function renderMain() {
       }
     }
 
+    // ---------------- BLACK ----------------
     const blackCell = document.createElement("div");
     blackCell.className = "move-cell";
 
     const blackMove = fullLine[i + 1];
+
     if (blackMove) {
       let txt = blackMove.san;
+
       if (blackMove.evalData?.symbol && blackMove.evalData.symbol !== "–") {
         txt += blackMove.evalData.symbol;
       }
 
       blackCell.textContent = txt;
 
-      if (i + 1 >= deviationStartIndex) {
+      const isInherited = (i + 1) < deviationStartIndex;
+
+      if (isInherited) {
+        blackCell.classList.add("inherited-move");
+      } else {
         const localIndex = (i + 1) - deviationStartIndex;
+
         blackCell.onclick = () => jumpToMove(localIndex, false);
 
         if (currentVariationIndex - 1 === localIndex) {
@@ -778,7 +1025,6 @@ function renderMain() {
     div.appendChild(row);
   }
 }
-
 /**
  * Restores board state to a previously logged move.
  * @param {number} index - Index in the respective array.
@@ -1252,6 +1498,9 @@ document.getElementById("loadPgnBtn").onclick = async () => {
     pgn_moves = data.moves || [];
     pgn_fens = data.fens || [];
 
+    // =========================================================================
+    // ANALYZE EVERY MOVE
+    // =========================================================================
     for (let i = 0; i < pgn_moves.length; i++) {
       loadingText.textContent = `Analyzing move ${i + 1} of ${pgn_moves.length}...`;
 
@@ -1259,26 +1508,43 @@ document.getElementById("loadPgnBtn").onclick = async () => {
         fen: pgn_fens[i + 1],
         prev_fen: pgn_fens[i],
         last_move_uci: pgn_moves[i].uci,
-        depth: depth   // <-- QUI PRENDE DAVVERO IL VALORE UI
+        depth: depth
       });
 
       pgn_moves[i].evalData = analysis.classification;
+      pgn_moves[i].eval = analysis.eval;
+      pgn_moves[i].cpLoss = Math.max(
+        0,
+        analysis.best_eval_loss || 0
+      );
     }
 
+    // =========================================================================
+    // BUILD FULL MAIN LINE HISTORY
+    // =========================================================================
     historyMain = [];
+
     for (let i = 0; i < pgn_moves.length; i++) {
       historyMain.push({
         san: pgn_moves[i].san,
         uci: pgn_moves[i].uci,
         fen_before: pgn_fens[i],
         fen_after: pgn_fens[i + 1],
-        evalData: pgn_moves[i].evalData
+        evalData: pgn_moves[i].evalData,
+        cpLoss: pgn_moves[i].cpLoss,
+        eval: pgn_moves[i].eval
       });
     }
 
+    // =========================================================================
+    // RESET VARIATION STATE
+    // =========================================================================
     historyVariations = [];
     deviationStartIndex = 0;
 
+    // =========================================================================
+    // SET POSITION TO END OF GAME
+    // =========================================================================
     pgn_index = pgn_moves.length;
     currentMainlineIndex = pgn_moves.length;
     currentVariationIndex = -1;
@@ -1291,13 +1557,23 @@ document.getElementById("loadPgnBtn").onclick = async () => {
 
     board.position(fenToPos(game_fen));
 
+    // =========================================================================
+    // UI REFRESH
+    // =========================================================================
     renderHistory();
     updatePgnNav();
 
+    calculateGameAccuracy();
+    renderEvalChart();
+
     overlay.classList.add("hidden");
+
+    // =========================================================================
+    // FINAL POSITION ANALYSIS
+    // =========================================================================
     analyzeCurrentPosition(
-      pgn_fens[pgn_moves.length - 1],
-      pgn_moves[pgn_moves.length - 1]?.uci
+      pgn_moves.length > 0 ? pgn_fens[pgn_moves.length - 1] : null,
+      pgn_moves.length > 0 ? pgn_moves[pgn_moves.length - 1].uci : null
     );
 
   } catch (e) {
@@ -1393,6 +1669,10 @@ function updatePgnNav() {
 
   document.getElementById("pgnPrev").disabled = false;
   document.getElementById("pgnNext").disabled = false;
+
+  if (evalChart) {
+    evalChart.update();
+  }
 }
 
 /** Steps the board forward following the primary loaded PGN branch. */

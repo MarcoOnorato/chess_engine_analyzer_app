@@ -412,7 +412,8 @@ def analyze() -> Response:
                 if actual_eval_raw is not None:
                     actual_eval = -actual_eval_raw
 
-            diff: float = float((best_eval_prev or 0) - (actual_eval or 0))
+            raw_loss = float((best_eval_prev or 0) - (actual_eval or 0))
+            diff: float = max(0.0, raw_loss)
             
             is_sac: bool = is_real_sacrifice(prev_board, last_move)
             label, symbol, color = classify_move(diff, is_sac)
@@ -431,7 +432,8 @@ def analyze() -> Response:
         "eval": eval_score,
         "top_moves": top_moves,
         "classification": classification,
-        "opening": detected_opening, 
+        "best_eval_loss": classification["diff_cp"] if classification else 0,
+        "opening": detected_opening,
         "turn": "white" if board.turn else "black",
         "is_game_over": board.is_game_over(),
         "legal_moves": [m.uci() for m in board.legal_moves],
