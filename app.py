@@ -320,6 +320,45 @@ def get_best_opening_name(fen: str) -> str:
     return filtered_names[0]
 
 
+def extract_top_moves(info_list: List[Any], board: chess.Board) -> List[Dict[str, Any]]:
+    moves = []
+    for entry in info_list:
+        if "pv" not in entry or not entry["pv"]:
+            continue
+            
+        move = entry["pv"][0]
+        score = entry["score"].white()
+
+        uci_str = move.uci()
+
+        pv_moves = entry.get("pv", [])
+        continuation_san = []
+        temp_board = board.copy()
+        for pv_move in pv_moves[:10]: 
+            continuation_san.append(temp_board.san(pv_move))
+            temp_board.push(pv_move)
+
+        cp = 0.0
+        if score.is_mate():
+            mate_moves = score.mate()
+            if mate_moves is not None:
+                cp = 99.0 if mate_moves > 0 else -99.0
+        else:
+            engine_score = score.score()
+            if engine_score is not None:
+                cp = engine_score / 100.0
+
+        moves.append({
+            "uci": uci_str,
+            "san": board.san(move),
+            "from": uci_str[:2],
+            "to": uci_str[2:4],
+            "score": cp,
+            "continuation": " ".join(continuation_san)
+        })
+    return moves
+
+
 @app.route("/api/analyze", methods=["POST"])
 def analyze() -> Response:
     """
@@ -348,63 +387,25 @@ def analyze() -> Response:
 
     engine = get_engine()
 
-    # --- Top 3 moves on current position ---
-    info_list = engine.analyse(
-        board,
-        chess.engine.Limit(depth=depth),
-        multipv=3,
-    )
-
-    top_moves: List[Dict[str, Any]] = []
-    for entry in info_list:
-        if "pv" not in entry or not entry["pv"]:
-            continue
-            
-        move: chess.Move = entry["pv"][0]
-        score: chess.engine.Score = entry["score"].white()
-
-        uci_str: str = move.uci()          # e.g., "e2e4"
-        move_from: str = uci_str[:2]       # "e2"
-        move_to: str = uci_str[2:4]        # "e4"
-
-        pv_moves: List[chess.Move] = entry.get("pv", [])
-        continuation_san: List[str] = []
-        temp_board: chess.Board = board.copy()
-
-        for pv_move in pv_moves[:10]: 
-            continuation_san.append(temp_board.san(pv_move))
-            temp_board.push(pv_move)
-
-        cp: float = 0.0
-        if score.is_mate():
-            mate_moves = score.mate()
-            if mate_moves is not None:
-                cp = 99.0 if mate_moves > 0 else -99.0
-        else:
-            engine_score = score.score()
-            if engine_score is not None:
-                cp = engine_score / 100.0
-
-        top_moves.append({
-            "uci": uci_str,
-            "san": board.san(move),
-            "from": move_from,
-            "to": move_to,
-            "score": cp,
-            "continuation": " ".join(continuation_san)
-        })
-
+    # Current position
+    info_list = engine.analyse(board, chess.engine.Limit(depth=depth), multipv=3)
+    top_moves = extract_top_moves(info_list, board)
     eval_score: float = top_moves[0]["score"] if top_moves else 0.0
 
-    # --- Classify the last move (if any) ---
+    # Prev position
     classification: Optional[Dict[str, Any]] = None
+    alternative_moves: List[Dict[str, Any]] = []
+    
     if prev_fen and last_move_uci:
         try:
             prev_board = chess.Board(prev_fen)
             last_move = chess.Move.from_uci(last_move_uci)
 
-            prev_info = engine.analyse(prev_board, chess.engine.Limit(depth=depth))
-            best_eval_prev: Optional[int] = prev_info["score"].relative.score(mate_score=10000)
+            # Variants from prev position
+            prev_info_list = engine.analyse(prev_board, chess.engine.Limit(depth=depth), multipv=3)
+            alternative_moves = extract_top_moves(prev_info_list, prev_board)
+            
+            best_eval_prev: Optional[int] = prev_info_list[0]["score"].relative.score(mate_score=10000)
 
             actual_eval: Optional[int] = None
             if info_list and "score" in info_list[0]:
@@ -431,6 +432,7 @@ def analyze() -> Response:
         "fen": fen,
         "eval": eval_score,
         "top_moves": top_moves,
+        "alternative_moves": alternative_moves, # <-- Nuovo dato restituito
         "classification": classification,
         "best_eval_loss": classification["diff_cp"] if classification else 0,
         "opening": detected_opening,
