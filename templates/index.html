@@ -217,6 +217,76 @@
     font-weight: bold;
   }
 
+  .history-panel {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-height: 500px;
+    max-height: 650px;
+  }
+
+  .history-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    flex-grow: 1;
+    min-height: 0;
+  }
+
+  .history-section {
+    display: flex;
+    flex-direction: column;
+    background: #1b1b1b;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 10px;
+    overflow: hidden;
+  }
+
+  .history-table {
+    overflow-y: auto;
+    flex-grow: 1;
+    font-size: 0.95em;
+    line-height: 1.8;
+  }
+
+  .history-row {
+    display: grid;
+    grid-template-columns: 40px 1fr 1fr;
+    padding: 4px 6px;
+    border-radius: 4px;
+    align-items: center;
+  }
+
+  .history-row:hover {
+    background: rgba(255,255,255,0.05);
+  }
+
+  .move-number {
+    color: #888;
+    font-weight: bold;
+  }
+
+  .move-cell {
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+  }
+
+  .move-cell:hover {
+    background: rgba(255,255,255,0.08);
+  }
+
+  .active-main {
+    border: 1px solid #26bbff;
+    background: rgba(38,187,255,0.15);
+  }
+
+  .active-var {
+    border: 1px solid #f0c15c;
+    background: rgba(240,193,92,0.15);
+  }
+
   /* ==========================================================================
      MODALS (Openings & Promotions)
      ========================================================================== */
@@ -346,15 +416,24 @@
       </div>
     </div>
 
-    <div class="card-history" style="flex-grow: 1; overflow-y: auto; max-height: 250px; display: flex; flex-direction: column;">
-        
-      <h3>📜 Main Line <span id="pgnPos" style="float: right; font-size: 0.8em; font-weight: normal;">0 / 0</span></h3>
-      <div id="historyMain" class="history" style="margin-bottom:15px; line-height: 1.6;"></div>
-      
-      <h3>🧪 Deviation</h3>
-      <div id="historyVariations" class="history" style="line-height: 1.6;"></div>
+    <div class="card history-panel">
+      <div class="history-columns">
 
-      <button id="undoBtn" style="margin-top: auto; align-self: flex-start;">⬅ Undo Last Deviation Move</button>
+        <div class="history-section">
+          <h3>📜 Main Line <span id="pgnPos" style="float:right; font-size:0.8em;">0 / 0</span></h3>
+          <div id="historyMain" class="history-table"></div>
+        </div>
+
+        <div class="history-section">
+          <h3>🧪 Deviation</h3>
+          <div id="historyVariations" class="history-table"></div>
+        </div>
+
+      </div>
+
+      <button id="undoBtn" style="margin-top:15px; align-self:flex-start; display:none;">
+        ⬅ Undo
+      </button>
     </div>
 
     <div class="card">
@@ -542,45 +621,75 @@ function renderHistory() {
 /**
  * Renders the primary history line moves into the DOM.
  */
- function renderMain() {
+function renderMain() {
   const div = document.getElementById("historyMain");
-  div.innerHTML = historyMain.length ? "" : "—";
+  div.innerHTML = "";
 
-  historyMain.forEach((h, i) => {
-    const span = document.createElement("span");
-    span.className = "hist-move";
+  if (!historyMain.length) {
+    div.innerHTML = "—";
+    return;
+  }
 
-    if (!in_deviation && i === currentMainlineIndex - 1) {
-      span.classList.add("active-main");
-    }
+  for (let i = 0; i < historyMain.length; i += 2) {
+    const row = document.createElement("div");
+    row.className = "history-row";
 
-    if (i % 2 === 0) {
-      span.innerHTML = `<b style="color:#888;">${Math.floor(i / 2) + 1}.</b> `;
-    }
+    const moveNumber = Math.floor(i / 2) + 1;
 
-    let moveString = h.san;
+    const numCell = document.createElement("div");
+    numCell.className = "move-number";
+    numCell.textContent = `${moveNumber}.`;
 
-    if (h.evalData && h.evalData.symbol && h.evalData.symbol !== "–") {
-      moveString += h.evalData.symbol;
-    }
+    const whiteCell = document.createElement("div");
+    whiteCell.className = "move-cell";
 
-    const moveTextSpan = document.createElement("span");
-    moveTextSpan.textContent = moveString;
+    const whiteMove = historyMain[i];
+    if (whiteMove) {
+      let txt = whiteMove.san;
+      if (whiteMove.evalData?.symbol && whiteMove.evalData.symbol !== "–") {
+        txt += whiteMove.evalData.symbol;
+      }
 
-    if (h.evalData && h.evalData.color) {
-      moveTextSpan.style.color = h.evalData.color;
+      whiteCell.textContent = txt;
+      whiteCell.onclick = () => jumpToMove(i, true);
 
-      if (h.evalData.symbol === "!!" || h.evalData.symbol === "??") {
-        moveTextSpan.style.fontWeight = "bold";
+      if (!in_deviation && currentMainlineIndex - 1 === i) {
+        whiteCell.classList.add("active-main");
+      }
+
+      if (whiteMove.evalData?.color) {
+        whiteCell.style.color = whiteMove.evalData.color;
       }
     }
 
-    span.appendChild(moveTextSpan);
-    span.onclick = () => jumpToMove(i, true);
+    const blackCell = document.createElement("div");
+    blackCell.className = "move-cell";
 
-    div.appendChild(span);
-    div.appendChild(document.createTextNode(" "));
-  });
+    const blackMove = historyMain[i + 1];
+    if (blackMove) {
+      let txt = blackMove.san;
+      if (blackMove.evalData?.symbol && blackMove.evalData.symbol !== "–") {
+        txt += blackMove.evalData.symbol;
+      }
+
+      blackCell.textContent = txt;
+      blackCell.onclick = () => jumpToMove(i + 1, true);
+
+      if (!in_deviation && currentMainlineIndex - 1 === i + 1) {
+        blackCell.classList.add("active-main");
+      }
+
+      if (blackMove.evalData?.color) {
+        blackCell.style.color = blackMove.evalData.color;
+      }
+    }
+
+    row.appendChild(numCell);
+    row.appendChild(whiteCell);
+    row.appendChild(blackCell);
+
+    div.appendChild(row);
+  }
 }
 
 /**
@@ -595,81 +704,79 @@ function renderHistory() {
     return;
   }
 
-  for (let i = 0; i < deviationStartIndex; i++) {
-    const h = historyMain[i];
+  const fullLine = [
+    ...historyMain.slice(0, deviationStartIndex),
+    ...historyVariations
+  ];
 
-    const span = document.createElement("span");
-    span.className = "hist-move var";
-    span.style.opacity = "0.7";
+  for (let i = 0; i < fullLine.length; i += 2) {
+    const row = document.createElement("div");
+    row.className = "history-row";
 
-    if (i % 2 === 0) {
-      span.innerHTML = `<b style="color:#666;">${Math.floor(i / 2) + 1}.</b> `;
-    }
+    const moveNumber = Math.floor(i / 2) + 1;
 
-    let moveString = h.san;
+    const numCell = document.createElement("div");
+    numCell.className = "move-number";
+    numCell.textContent = `${moveNumber}.`;
 
-    if (h.evalData && h.evalData.symbol && h.evalData.symbol !== "–") {
-      moveString += h.evalData.symbol;
-    }
+    const whiteCell = document.createElement("div");
+    whiteCell.className = "move-cell";
 
-    const moveTextSpan = document.createElement("span");
-    moveTextSpan.textContent = moveString;
+    const whiteMove = fullLine[i];
+    if (whiteMove) {
+      let txt = whiteMove.san;
+      if (whiteMove.evalData?.symbol && whiteMove.evalData.symbol !== "–") {
+        txt += whiteMove.evalData.symbol;
+      }
 
-    if (h.evalData && h.evalData.color) {
-      moveTextSpan.style.color = h.evalData.color;
+      whiteCell.textContent = txt;
 
-      if (h.evalData.symbol === "!!" || h.evalData.symbol === "??") {
-        moveTextSpan.style.fontWeight = "bold";
+      if (i >= deviationStartIndex) {
+        const localIndex = i - deviationStartIndex;
+        whiteCell.onclick = () => jumpToMove(localIndex, false);
+
+        if (currentVariationIndex - 1 === localIndex) {
+          whiteCell.classList.add("active-var");
+        }
+      }
+
+      if (whiteMove.evalData?.color) {
+        whiteCell.style.color = whiteMove.evalData.color;
       }
     }
 
-    span.appendChild(moveTextSpan);
-    div.appendChild(span);
-    div.appendChild(document.createTextNode(" "));
+    const blackCell = document.createElement("div");
+    blackCell.className = "move-cell";
+
+    const blackMove = fullLine[i + 1];
+    if (blackMove) {
+      let txt = blackMove.san;
+      if (blackMove.evalData?.symbol && blackMove.evalData.symbol !== "–") {
+        txt += blackMove.evalData.symbol;
+      }
+
+      blackCell.textContent = txt;
+
+      if (i + 1 >= deviationStartIndex) {
+        const localIndex = (i + 1) - deviationStartIndex;
+        blackCell.onclick = () => jumpToMove(localIndex, false);
+
+        if (currentVariationIndex - 1 === localIndex) {
+          blackCell.classList.add("active-var");
+        }
+      }
+
+      if (blackMove.evalData?.color) {
+        blackCell.style.color = blackMove.evalData.color;
+      }
+    }
+
+    row.appendChild(numCell);
+    row.appendChild(whiteCell);
+    row.appendChild(blackCell);
+
+    div.appendChild(row);
   }
-
-
-
-
-  let moveIndex = deviationStartIndex;
-
-  historyVariations.forEach((h, i) => {
-    const span = document.createElement("span");
-    span.className = "hist-move var";
-
-    const isWhite = moveIndex % 2 === 0;
-
-    let html = "";
-
-    // stampa numero SOLO quando è bianco
-    if (isWhite) {
-      html += `<b style="color:#666;">${formatMoveNumber(moveIndex)}.</b> `;
-    }
-
-    let moveString = h.san;
-
-    if (h.evalData?.symbol && h.evalData.symbol !== "–") {
-      moveString += h.evalData.symbol;
-    }
-
-    const moveTextSpan = document.createElement("span");
-    moveTextSpan.textContent = moveString;
-
-    if (h.evalData?.color) {
-      moveTextSpan.style.color = h.evalData.color;
-    }
-
-    span.innerHTML = html;
-    span.appendChild(moveTextSpan);
-
-    span.onclick = () => jumpToMove(i, false);
-
-    div.appendChild(span);
-    div.appendChild(document.createTextNode(" "));
-
-    moveIndex++;
-  });
-
 }
 
 /**
