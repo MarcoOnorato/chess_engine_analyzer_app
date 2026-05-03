@@ -435,6 +435,12 @@ let deviationStartIndex = 0;
 // HELPER FUNCTIONS
 // ============================================================================
 
+/* Deviations PGN format */
+
+function formatMoveNumber(indexInFullLine) {
+  return Math.floor(indexInFullLine / 2) + 1;
+}
+
 /**
  * Standardizes API fetch requests.
  * @param {string} path - The API endpoint to request.
@@ -623,37 +629,47 @@ function renderHistory() {
   }
 
 
+
+
+  let moveIndex = deviationStartIndex;
+
   historyVariations.forEach((h, i) => {
     const span = document.createElement("span");
     span.className = "hist-move var";
 
-    if (i === currentVariationIndex - 1) {
-      span.classList.add("active-var");
+    const isWhite = moveIndex % 2 === 0;
+
+    let html = "";
+
+    // stampa numero SOLO quando è bianco
+    if (isWhite) {
+      html += `<b style="color:#666;">${formatMoveNumber(moveIndex)}.</b> `;
     }
 
     let moveString = h.san;
 
-    if (h.evalData && h.evalData.symbol && h.evalData.symbol !== "–") {
+    if (h.evalData?.symbol && h.evalData.symbol !== "–") {
       moveString += h.evalData.symbol;
     }
 
     const moveTextSpan = document.createElement("span");
     moveTextSpan.textContent = moveString;
 
-    if (h.evalData && h.evalData.color) {
+    if (h.evalData?.color) {
       moveTextSpan.style.color = h.evalData.color;
-
-      if (h.evalData.symbol === "!!" || h.evalData.symbol === "??") {
-        moveTextSpan.style.fontWeight = "bold";
-      }
     }
 
+    span.innerHTML = html;
     span.appendChild(moveTextSpan);
+
     span.onclick = () => jumpToMove(i, false);
 
     div.appendChild(span);
     div.appendChild(document.createTextNode(" "));
+
+    moveIndex++;
   });
+
 }
 
 /**
