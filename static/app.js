@@ -277,39 +277,45 @@ function updateEvalBar(score) {
 }
 
 function revertOneStep() {
-    if (in_deviation) {
-        if (historyVariations.length > 0) {
-            historyVariations.pop();
-            if (historyVariations.length > 0) {
-                const last = historyVariations[historyVariations.length - 1];
-                game_fen = last.fen_after;
-                currentVariationIndex = historyVariations.length;
-            } else {
-                in_deviation = false;
-                currentVariationIndex = -1;
-                currentMainlineIndex = deviationStartIndex;
-                pgn_index = deviationStartIndex;
-                game_fen = deviationStartIndex > 0
-                    ? historyMain[deviationStartIndex - 1].fen_after
-                    : (pgn_fens.length > 0 ? pgn_fens[0] : "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-            }
-        }
-    } else {
-        if (pgn_index > 0) {
-            pgn_index--;
-            currentMainlineIndex = pgn_index;
-            game_fen = pgn_fens[pgn_index];
-        }
-    }
+  if (in_deviation) {
+      const movesToKeep = currentVariationIndex - 1;
+      historyVariations = historyVariations.slice(0, movesToKeep);
+      
+      if (historyVariations.length > 0) {
+          const last = historyVariations[historyVariations.length - 1];
+          game_fen = last.fen_after;
+          currentVariationIndex = historyVariations.length;
+      } else {
+          in_deviation = false;
+          currentVariationIndex = -1;
+          currentMainlineIndex = deviationStartIndex;
+          pgn_index = deviationStartIndex;
+          game_fen = deviationStartIndex > 0
+              ? historyMain[deviationStartIndex - 1].fen_after
+              : (pgn_fens.length > 0 ? pgn_fens[0] : "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+      }
+  } else {
+      if (pgn_index > 0) {
+          pgn_index--;
+          currentMainlineIndex = pgn_index;
+          game_fen = pgn_fens[pgn_index];
+      }
+  }
 }
 
 async function playAlternativeMove(uci) {
-    if (is_moving) return;
-    revertOneStep();
-    board.position(fenToPos(game_fen));
-    renderHistory();
-    updatePgnNav();
-    await playMoveUci(uci);
+  if (is_moving) return;
+  
+  revertOneStep();
+  
+  board.position(fenToPos(game_fen));
+  renderHistory();
+  updatePgnNav();
+  
+  renderArrows([]);
+  document.getElementById("topMoves").innerHTML = "<li>Branching...</li>";
+  document.getElementById("altMoves").innerHTML = "<li>Branching...</li>";
+  await playMoveUci(uci);
 }
 
 /**
