@@ -45,12 +45,32 @@
   /* ==========================================================================
      LEFT COLUMN (Board & Eval)
      ========================================================================== */
+
+  #loadingOverlay {
+    position: absolute; 
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(22, 26, 30, 0.85); /* Stesso colore di sfondo del body ma opaco */
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; 
+    z-index: 1000; border-radius: 8px;
+  }
+  
+  .spinner {
+    border: 4px solid rgba(255,255,255,0.1);
+    border-left-color: #26bbff;
+    border-radius: 50%; width: 50px; height: 50px;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
   .left-column {
-    flex: 4;
+    flex: 3;
     display: flex;
     flex-direction: column;
     align-items: center;
     min-width: 0;
+    position: relative; 
   }
 
   .opening-display {
@@ -105,7 +125,7 @@
      RIGHT COLUMN (Controls, History, Analysis)
      ========================================================================== */
   .right-column {
-    flex: 1;
+    flex: 2;
     display: flex;
     flex-direction: column;
     gap: 15px;
@@ -125,6 +145,14 @@
     color: #888; 
     text-transform: uppercase; 
     margin-bottom: 10px;
+  }
+
+  .card-history { 
+    background: #222; 
+    border-radius: 8px; 
+    padding: 15px; 
+    border: 1px solid #333;
+    min-height: 450px;
   }
   
   button, input {
@@ -174,6 +202,20 @@
   }
   .hist-move:hover { background-color: rgba(255, 255, 255, 0.1); color: #26bbff; }
   .var { color: #aaa; font-style: italic; }
+
+  .hist-move.active-main {
+    border: 1px solid #26bbff;
+    background-color: rgba(38, 187, 255, 0.15);
+    color: #26bbff;
+    font-weight: bold;
+  }
+
+  .hist-move.active-var {
+    border: 1px solid #f0c15c;
+    background-color: rgba(240, 193, 92, 0.15);
+    color: #f0c15c;
+    font-weight: bold;
+  }
 
   /* ==========================================================================
      MODALS (Openings & Promotions)
@@ -262,6 +304,10 @@
       <div id="board"></div>
     </div>
     <div id="status" style="margin-top: 10px; color: #aaa;"></div>
+    <div id="loadingOverlay" class="hidden">
+      <div class="spinner"></div>
+      <p id="loadingText" style="margin-top: 15px; font-weight: bold; color: #fff;">Evaluating game...</p>
+    </div>
   </div>
 
   <div class="right-column">
@@ -273,7 +319,7 @@
           <input type="number" id="depth" value="14" min="8" max="30" style="width:45px; padding: 5px; margin-left: 5px;" />
         </label>
       </div>
-      <textarea id="pgnInput" rows="2" placeholder="Load PGN (e.g., 1. e4 e5 2. Nf3...)" style="width:100%; box-sizing:border-box; background:#333; color:white; border:1px solid #444; padding: 8px; border-radius: 4px; resize: vertical;"></textarea>
+      <textarea id="pgnInput" rows="2" placeholder="Load PGN (e.g., 1. e4 e5 2. Nf3...)" style="min-height: 75px; width:100%; box-sizing:border-box; background:#333; color:white; border:1px solid #444; padding: 8px; border-radius: 4px; resize: vertical;"></textarea>
       <button id="loadPgnBtn" style="width:100%; margin-top:5px; background: #4caf50; border-color: #4caf50;">Load PGN</button>
     </div>
 
@@ -291,10 +337,8 @@
                style="flex-grow: 1; cursor: pointer;">
         <span id="sliderMax" style="font-size: 0.8em; color: #888;">0</span>
       </div>
-    </div>
-
-    <div class="card">
-      <div class="control-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap:8px;">
+    
+      <div class="control-grid" style="display:grid; grid-template-columns: repeat(4, 1fr); gap:8px;">
         <button id="pgnPrev">Prev</button>
         <button id="pgnNext">Next</button>
         <button id="flipBtn">⇅ Turn</button>
@@ -302,7 +346,7 @@
       </div>
     </div>
 
-    <div class="card" style="flex-grow: 1; overflow-y: auto; max-height: 250px; display: flex; flex-direction: column;">
+    <div class="card-history" style="flex-grow: 1; overflow-y: auto; max-height: 250px; display: flex; flex-direction: column;">
         
       <h3>📜 Main Line <span id="pgnPos" style="float: right; font-size: 0.8em; font-weight: normal;">0 / 0</span></h3>
       <div id="historyMain" class="history" style="margin-bottom:15px; line-height: 1.6;"></div>
@@ -310,7 +354,7 @@
       <h3>🧪 Deviation</h3>
       <div id="historyVariations" class="history" style="line-height: 1.6;"></div>
 
-      <button id="undoBtn" style="margin-top: auto; align-self: flex-start;">⬅ Undo</button>
+      <button id="undoBtn" style="margin-top: auto; align-self: flex-start;">⬅ Undo Last Deviation Move</button>
     </div>
 
     <div class="card">
@@ -377,11 +421,15 @@ let pgn_index = 0;
 /** @type {boolean} Flag indicating whether the current board state has deviated from the PGN main line */
 let in_deviation = false;
 /** @type {Array<Object>} Cache of top moves suggested by the engine */
-let topMovesCache = [];    
-/** @type {number} Token to ensure overlapping analysis requests do not overwrite newer states */
-let analyzeToken = 0;      
+let topMovesCache = [];
 /** @type {Object} Global cache for storing fetched openings data for searching */
 let cachedOpenings = {};
+/** @type {number} */
+let currentMainlineIndex = 0;
+/** @type {number} */
+let currentVariationIndex = -1;
+/** @type {number} */
+let deviationStartIndex = 0;
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -488,15 +536,42 @@ function renderHistory() {
 /**
  * Renders the primary history line moves into the DOM.
  */
-function renderMain() {
+ function renderMain() {
   const div = document.getElementById("historyMain");
   div.innerHTML = historyMain.length ? "" : "—";
+
   historyMain.forEach((h, i) => {
     const span = document.createElement("span");
     span.className = "hist-move";
-    if (i % 2 === 0) span.innerHTML = `<b>${Math.floor(i/2) + 1}.</b> `;
-    span.innerHTML += h.san;
+
+    if (!in_deviation && i === currentMainlineIndex - 1) {
+      span.classList.add("active-main");
+    }
+
+    if (i % 2 === 0) {
+      span.innerHTML = `<b style="color:#888;">${Math.floor(i / 2) + 1}.</b> `;
+    }
+
+    let moveString = h.san;
+
+    if (h.evalData && h.evalData.symbol && h.evalData.symbol !== "–") {
+      moveString += h.evalData.symbol;
+    }
+
+    const moveTextSpan = document.createElement("span");
+    moveTextSpan.textContent = moveString;
+
+    if (h.evalData && h.evalData.color) {
+      moveTextSpan.style.color = h.evalData.color;
+
+      if (h.evalData.symbol === "!!" || h.evalData.symbol === "??") {
+        moveTextSpan.style.fontWeight = "bold";
+      }
+    }
+
+    span.appendChild(moveTextSpan);
     span.onclick = () => jumpToMove(i, true);
+
     div.appendChild(span);
     div.appendChild(document.createTextNode(" "));
   });
@@ -505,14 +580,77 @@ function renderMain() {
 /**
  * Renders the deviation branch moves into the DOM.
  */
-function renderVariations() {
+ function renderVariations() {
   const div = document.getElementById("historyVariations");
-  div.innerHTML = historyVariations.length ? "" : "—";
+  div.innerHTML = "";
+
+  if (!historyVariations.length) {
+    div.innerHTML = "—";
+    return;
+  }
+
+  for (let i = 0; i < deviationStartIndex; i++) {
+    const h = historyMain[i];
+
+    const span = document.createElement("span");
+    span.className = "hist-move var";
+    span.style.opacity = "0.7";
+
+    if (i % 2 === 0) {
+      span.innerHTML = `<b style="color:#666;">${Math.floor(i / 2) + 1}.</b> `;
+    }
+
+    let moveString = h.san;
+
+    if (h.evalData && h.evalData.symbol && h.evalData.symbol !== "–") {
+      moveString += h.evalData.symbol;
+    }
+
+    const moveTextSpan = document.createElement("span");
+    moveTextSpan.textContent = moveString;
+
+    if (h.evalData && h.evalData.color) {
+      moveTextSpan.style.color = h.evalData.color;
+
+      if (h.evalData.symbol === "!!" || h.evalData.symbol === "??") {
+        moveTextSpan.style.fontWeight = "bold";
+      }
+    }
+
+    span.appendChild(moveTextSpan);
+    div.appendChild(span);
+    div.appendChild(document.createTextNode(" "));
+  }
+
+
   historyVariations.forEach((h, i) => {
     const span = document.createElement("span");
     span.className = "hist-move var";
-    span.innerHTML = h.san;
+
+    if (i === currentVariationIndex - 1) {
+      span.classList.add("active-var");
+    }
+
+    let moveString = h.san;
+
+    if (h.evalData && h.evalData.symbol && h.evalData.symbol !== "–") {
+      moveString += h.evalData.symbol;
+    }
+
+    const moveTextSpan = document.createElement("span");
+    moveTextSpan.textContent = moveString;
+
+    if (h.evalData && h.evalData.color) {
+      moveTextSpan.style.color = h.evalData.color;
+
+      if (h.evalData.symbol === "!!" || h.evalData.symbol === "??") {
+        moveTextSpan.style.fontWeight = "bold";
+      }
+    }
+
+    span.appendChild(moveTextSpan);
     span.onclick = () => jumpToMove(i, false);
+
     div.appendChild(span);
     div.appendChild(document.createTextNode(" "));
   });
@@ -525,20 +663,23 @@ function renderVariations() {
  */
 function jumpToMove(index, isMainLine) {
   let targetMove;
+
   if (isMainLine) {
     targetMove = historyMain[index];
-    historyMain = historyMain.slice(0, index + 1);
+    currentMainlineIndex = index + 1;
     historyVariations = [];
+    currentVariationIndex = -1;
     in_deviation = false;
-    pgn_index = historyMain.length;
+    pgn_index = currentMainlineIndex;
   } else {
     targetMove = historyVariations[index];
-    historyVariations = historyVariations.slice(0, index + 1);
+    currentVariationIndex = index + 1;
     in_deviation = true;
   }
-  
+
   game_fen = targetMove.fen_after;
   board.position(fenToPos(game_fen));
+
   renderHistory();
   updatePgnNav();
   analyzeCurrentPosition(targetMove.fen_before, targetMove.uci);
@@ -693,31 +834,58 @@ async function playMoveUci(uci) {
  * @param {Object} legalResult - Payload returning from /api/legal_moves.
  * @param {string} fen_before - The game FEN state prior to the move.
  */
-function pushMove(legalResult, fen_before) {
+ function pushMove(legalResult, fen_before) {
   const moveObj = {
-    san: legalResult.san, uci: legalResult.uci,
-    fen_before, fen_after: legalResult.new_fen,
+    san: legalResult.san,
+    uci: legalResult.uci,
+    fen_before,
+    fen_after: legalResult.new_fen,
+    evalData: null // verrà popolato dopo analisi
   };
 
-  if (!in_deviation && pgn_index === historyMain.length) {
-    if (pgn_moves.length > 0 && pgn_index < pgn_moves.length && pgn_moves[pgn_index].uci === legalResult.uci) {
-        historyMain.push(moveObj);
-        pgn_index++;
+  if (!in_deviation) {
+    if (
+      pgn_moves.length > 0 &&
+      pgn_index < pgn_moves.length &&
+      pgn_moves[pgn_index].uci === legalResult.uci
+    ) {
+      currentMainlineIndex++;
+      pgn_index++;
     } else {
-        if (pgn_moves.length > 0) in_deviation = true;
-        historyVariations.push(moveObj);
+      in_deviation = true;
+      deviationStartIndex = currentMainlineIndex;
+      historyVariations = [];
+      currentVariationIndex = 1;
+      historyVariations.push(moveObj);
     }
   } else {
-    in_deviation = true;
     historyVariations.push(moveObj);
+    currentVariationIndex++;
   }
 
   game_fen = legalResult.new_fen;
   board.position(fenToPos(game_fen));
-  
+
   renderHistory();
   updatePgnNav();
-  analyzeCurrentPosition(fen_before, legalResult.uci);
+
+  analyzeCurrentPosition(fen_before, legalResult.uci).then(async () => {
+    try {
+      const analysis = await api("/api/analyze", {
+        fen: legalResult.new_fen,
+        prev_fen: fen_before,
+        last_move_uci: legalResult.uci,
+        depth: parseInt(document.getElementById("depth").value, 10) || 14
+      });
+
+      moveObj.evalData = analysis.classification;
+
+      renderHistory();
+
+    } catch (e) {
+      console.error("Deviation move classification failed:", e);
+    }
+  });
 }
 
 // ============================================================================
@@ -839,6 +1007,9 @@ document.getElementById("closeOpenings").onclick = () => openingsModal.classList
  * @param {string} piece - Piece ID (e.g. 'wP').
  */
 function onDrop(source, target, piece) {
+  if (in_deviation && !isAtDeviationTip()) {
+    return "snapback";
+  }
   if (source === target) return "snapback";
   const isPromotion = (piece === "wP" && target[1] === "8") || (piece === "bP" && target[1] === "1");
   
@@ -855,18 +1026,35 @@ function onDrop(source, target, piece) {
  * @param {string} source - Start square.
  * @param {string} target - End square.
  */
-async function handleNormalMove(source, target) {
+ async function handleNormalMove(source, target) {
   if (is_moving) { 
     board.position(fenToPos(game_fen)); 
     return; 
   }
+
+  if (in_deviation && !isAtDeviationTip()) {
+    board.position(fenToPos(game_fen));
+    return;
+  }
+
   is_moving = true;
 
   try {
     const fen_before = game_fen;
-    const result = await api("/api/legal_moves", { fen: game_fen, from: source, to: target, promotion: "q" });
-    if (!result.legal) { board.position(fenToPos(game_fen)); return; }
+    const result = await api("/api/legal_moves", {
+      fen: game_fen,
+      from: source,
+      to: target,
+      promotion: "q"
+    });
+
+    if (!result.legal) {
+      board.position(fenToPos(game_fen));
+      return;
+    }
+
     pushMove(result, fen_before);
+
   } finally {
     is_moving = false;
   }
@@ -879,6 +1067,10 @@ async function handleNormalMove(source, target) {
  * @param {string} color - The color string ('white', 'black') of the promoting piece.
  */
 async function handlePromotion(source, target, color) {
+  if (in_deviation && !isAtDeviationTip()) {
+    board.position(fenToPos(game_fen));
+    return;
+  }
   if (is_moving) { 
     board.position(fenToPos(game_fen)); 
     return; 
@@ -924,30 +1116,70 @@ const moveSlider = document.getElementById("moveSlider");
 document.getElementById("loadPgnBtn").onclick = async () => {
   const txt = document.getElementById("pgnInput").value.trim();
   if (!txt) return;
-  
-  try {
-    const data = await api("/api/load_pgn", {pgn: txt});
-    
-    pgn_moves = data.moves || [];
-    pgn_fens = data.fens || []; 
-    
-    pgn_index = 0;
-    in_deviation = false;
 
-    game_fen = pgn_fens.length > 0 ? pgn_fens[0] : (data.start_fen || "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+  const depth = parseInt(document.getElementById("depth").value, 10) || 14;
+
+  const overlay = document.getElementById("loadingOverlay");
+  const loadingText = document.getElementById("loadingText");
+  overlay.classList.remove("hidden");
+
+  try {
+    const data = await api("/api/load_pgn", { pgn: txt });
+
+    pgn_moves = data.moves || [];
+    pgn_fens = data.fens || [];
+
+    for (let i = 0; i < pgn_moves.length; i++) {
+      loadingText.textContent = `Analyzing move ${i + 1} of ${pgn_moves.length}...`;
+
+      const analysis = await api("/api/analyze", {
+        fen: pgn_fens[i + 1],
+        prev_fen: pgn_fens[i],
+        last_move_uci: pgn_moves[i].uci,
+        depth: depth   // <-- QUI PRENDE DAVVERO IL VALORE UI
+      });
+
+      pgn_moves[i].evalData = analysis.classification;
+    }
 
     historyMain = [];
+    for (let i = 0; i < pgn_moves.length; i++) {
+      historyMain.push({
+        san: pgn_moves[i].san,
+        uci: pgn_moves[i].uci,
+        fen_before: pgn_fens[i],
+        fen_after: pgn_fens[i + 1],
+        evalData: pgn_moves[i].evalData
+      });
+    }
+
     historyVariations = [];
+    deviationStartIndex = 0;
+
+    pgn_index = pgn_moves.length;
+    currentMainlineIndex = pgn_moves.length;
+    currentVariationIndex = -1;
+    in_deviation = false;
+
+    game_fen = pgn_fens[pgn_moves.length];
 
     moveSlider.max = pgn_moves.length;
-    moveSlider.value = 0;
-    
+    moveSlider.value = pgn_moves.length;
+
     board.position(fenToPos(game_fen));
+
     renderHistory();
     updatePgnNav();
-    analyzeCurrentPosition();
-  } catch (e) { 
-    alert("Error loading PGN"); 
+
+    overlay.classList.add("hidden");
+    analyzeCurrentPosition(
+      pgn_fens[pgn_moves.length - 1],
+      pgn_moves[pgn_moves.length - 1]?.uci
+    );
+
+  } catch (e) {
+    overlay.classList.add("hidden");
+    alert("Error loading PGN");
     console.error(e);
   }
 };
@@ -967,28 +1199,55 @@ document.getElementById("flipBtn").onclick = () => board.flip();
 /** Pops a move off the applicable history array stack. */
 document.getElementById("undoBtn").onclick = () => {
   if (historyVariations.length > 0) {
-    game_fen = historyVariations.pop().fen_before;
-  } else if (historyMain.length > 0) {
-    game_fen = historyMain.pop().fen_before;
-    pgn_index--; in_deviation = false;
-  } else return;
-  
-  board.position(fenToPos(game_fen));
-  renderHistory(); updatePgnNav();
 
-  let p_fen = null;
-  let l_uci = null;
-  
-  if (in_deviation && historyVariations.length > 0) {
-    p_fen = historyVariations[historyVariations.length - 1].fen_before;
-    l_uci = historyVariations[historyVariations.length - 1].uci;
-  } else if (!in_deviation && pgn_index > 0) {
-    p_fen = pgn_fens[pgn_index - 1];
-    l_uci = pgn_moves[pgn_index - 1].uci;
+    historyVariations.pop();
+
+    if (historyVariations.length > 0) {
+      const last = historyVariations[historyVariations.length - 1];
+
+      game_fen = last.fen_after;
+      currentVariationIndex = historyVariations.length;
+
+      in_deviation = true;
+
+    } else {
+      in_deviation = false;
+      currentVariationIndex = -1;
+
+      currentMainlineIndex = deviationStartIndex;
+      pgn_index = deviationStartIndex;
+
+      game_fen = deviationStartIndex > 0
+        ? historyMain[deviationStartIndex - 1].fen_after
+        : pgn_fens[0];
+    }
+
+    board.position(fenToPos(game_fen));
+
+    renderHistory();
+    updatePgnNav();
+
+    let prev_fen = null;
+    let last_move_uci = null;
+
+    if (historyVariations.length > 0) {
+      const last = historyVariations[historyVariations.length - 1];
+      prev_fen = last.fen_before;
+      last_move_uci = last.uci;
+
+    } else if (in_deviation === false && currentMainlineIndex > 0) {
+      prev_fen = historyMain[currentMainlineIndex - 1].fen_before;
+      last_move_uci = historyMain[currentMainlineIndex - 1].uci;
+    }
+
+    analyzeCurrentPosition(prev_fen, last_move_uci);
   }
-  
-  analyzeCurrentPosition(p_fen, l_uci);
 };
+
+/** Lock from deviations on deviation */
+function isAtDeviationTip() {
+  return in_deviation && currentVariationIndex === historyVariations.length;
+}
 
 /** Updates pagination labels dependent on loaded states. */
 function updatePgnNav() {
@@ -1015,16 +1274,46 @@ function updatePgnNav() {
 
 /** Steps the board forward following the primary loaded PGN branch. */
 document.getElementById("pgnNext").onclick = () => {
-  if (!in_deviation && pgn_index < pgn_moves.length) {
-    moveSlider.value = pgn_index + 1;
-    moveSlider.dispatchEvent(new Event('input'));
-    moveSlider.dispatchEvent(new Event('change'));
+  if (pgn_index < pgn_moves.length) {
+    pgn_index++;
+    currentMainlineIndex = pgn_index;
+    in_deviation = false;
+    historyVariations = [];
+    currentVariationIndex = -1;
+
+    game_fen = pgn_fens[pgn_index];
+    board.position(fenToPos(game_fen));
+
+    renderHistory();
+    updatePgnNav();
+
+    const prev_fen = pgn_index > 0 ? pgn_fens[pgn_index - 1] : null;
+    const last_move_uci = pgn_index > 0 ? pgn_moves[pgn_index - 1].uci : null;
+
+    analyzeCurrentPosition(prev_fen, last_move_uci);
   }
 };
 
-/** Steps the board backward via the slider/undo system. */
-document.getElementById("pgnPrev").onclick = () => document.getElementById("undoBtn").click();
+document.getElementById("pgnPrev").onclick = () => {
+  if (pgn_index > 0) {
+    pgn_index--;
+    currentMainlineIndex = pgn_index;
+    in_deviation = false;
+    historyVariations = [];
+    currentVariationIndex = -1;
 
+    game_fen = pgn_fens[pgn_index];
+    board.position(fenToPos(game_fen));
+
+    renderHistory();
+    updatePgnNav();
+
+    const prev_fen = pgn_index > 0 ? pgn_fens[pgn_index - 1] : null;
+    const last_move_uci = pgn_index > 0 ? pgn_moves[pgn_index - 1].uci : null;
+
+    analyzeCurrentPosition(prev_fen, last_move_uci);
+  }
+};
 
 // ============================================================================
 // SLIDER LOGIC
@@ -1034,14 +1323,15 @@ document.getElementById("pgnPrev").onclick = () => document.getElementById("undo
  * Reconstructs the history trail up to a specified index point.
  * @param {number} upToIndex - Target bounds.
  */
-function rebuildHistoryMain(upToIndex) {
+ function rebuildHistoryMain(upToIndex) {
   historyMain = [];
   for (let i = 0; i < upToIndex; i++) {
     historyMain.push({
       san: pgn_moves[i].san,
       uci: pgn_moves[i].uci,
       fen_before: pgn_fens[i],
-      fen_after: pgn_fens[i + 1]
+      fen_after: pgn_fens[i + 1],
+      evalData: pgn_moves[i].evalData
     });
   }
 }
@@ -1052,22 +1342,21 @@ moveSlider.addEventListener("input", function() {
 
   if (pgn_moves.length > 0 && pgn_fens.length > targetIndex) {
     pgn_index = targetIndex;
+    currentMainlineIndex = targetIndex;
+
     in_deviation = false;
     historyVariations = [];
-    
-    rebuildHistoryMain(targetIndex);
-    
+    currentVariationIndex = -1;
+
     game_fen = pgn_fens[targetIndex];
     board.position(fenToPos(game_fen), false);
-    
+
     renderHistory();
     updatePgnNav();
 
-    if (!in_deviation) {
-        document.getElementById("openingName").textContent = currentOpeningName;
-    }
+    document.getElementById("topMoves").innerHTML =
+      "<li style='color:#888;'>Sliding...</li>";
 
-    document.getElementById("topMoves").innerHTML = "<li style='color:#888;'>Sliding...</li>";
     renderArrows([]);
   }
 });
@@ -1077,7 +1366,7 @@ moveSlider.addEventListener("change", function() {
   let prev_fen = null;
   let last_move_uci = null;
 
-  if (pgn_index > 0 && pgn_moves.length > 0) {
+  if (pgn_index > 0) {
     prev_fen = pgn_fens[pgn_index - 1];
     last_move_uci = pgn_moves[pgn_index - 1].uci;
   }
