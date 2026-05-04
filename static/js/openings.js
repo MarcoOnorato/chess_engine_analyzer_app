@@ -34,9 +34,13 @@ function renderOpeningsList(filterText = "") {
       <span class="opening-moves">${pgnString.substring(0, 50)}...</span>
     `;
     item.onclick = () => {
-      document.getElementById("pgnInput").value = pgnString;
-      document.getElementById("loadPgnBtn").click();
       modal.classList.add("hidden");
+
+      if (window.loadAndAnalyze) {
+        window.loadAndAnalyze(pgnString);
+      } else {
+        console.error("loadAndAnalyze non trovata");
+      }
     };
     listEl.appendChild(item);
   }

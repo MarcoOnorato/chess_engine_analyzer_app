@@ -18,7 +18,7 @@ import { state } from "./state.js";
  * @returns {number} Accuracy percentage (0–100).
  */
 export function moveAccuracy(cpLoss) {
-  return Math.max(0, Math.min(100, 100 * Math.exp(-0.0045 * cpLoss)));
+  return Math.max(0, Math.min(100, 100 * Math.exp(-0.0055 * cpLoss)));
 }
 
 /**

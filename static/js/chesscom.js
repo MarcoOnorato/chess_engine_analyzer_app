@@ -82,15 +82,21 @@ export function bindChessCom() {
             ? "0-1"
             : "½-½";
 
-        item.innerHTML = `
-          <span class="opening-name">${white} vs ${black} <span style="color:#aaa; font-size:0.8em; margin-left:5px;">(${result})</span></span>
-          <span class="opening-moves">${dateStr} • ${game.time_class}</span>
-        `;
-        item.onclick = () => {
-          document.getElementById("pgnInput").value = game.pgn;
-          document.getElementById("loadPgnBtn").click();
-          modal.classList.add("hidden");
-        };
+          item.innerHTML = `
+            <span class="opening-name">${white} vs ${black} <span style="color:#aaa; font-size:0.8em; margin-left:5px;">(${result})</span></span>
+            <span class="opening-moves">${dateStr} • ${game.time_class}</span>
+          `;
+  
+          item.onclick = () => {
+            modal.classList.add("hidden");
+            
+            if (window.loadAndAnalyze) {
+              window.loadAndAnalyze(game.pgn);
+            } else {
+              console.error("loadAndAnalyze not found in window");
+            }
+          };
+
         listEl.appendChild(item);
       });
     } catch (e) {
