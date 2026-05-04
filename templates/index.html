@@ -99,7 +99,7 @@
         </div>
       </div>
 
-      <!-- Controlli Posizione -->
+      <!-- Navigation controls -->
       <div class="control-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;">
         <button id="pgnPrev" style="cursor: pointer;">Prev</button>
         <button id="pgnNext" style="cursor: pointer;">Next</button>
@@ -108,14 +108,14 @@
       </div>
     </div>
 
-    <!-- Modale PGN (Inizialmente nascosta) -->
+    <!-- PGN Modal -->
     <div id="pgnModal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.6); align-items: center; justify-content: center;">
       <div style="background: #2a2a2a; padding: 20px; border-radius: 8px; width: 90%; max-width: 450px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
         <h3 style="color: white; margin-top: 0; margin-bottom: 12px; font-family: sans-serif; font-size: 1.1em; font-weight: 500;">Load PGN</h3>
         <textarea id="pgnInput" rows="4" placeholder="Paste PGN here (e.g., 1. e4 e5 2. Nf3...)" style="width: 100%; box-sizing: border-box; background: #1e1e1e; color: #eee; border: 1px solid #444; padding: 10px; border-radius: 4px; resize: vertical; font-family: monospace; outline: none; margin-bottom: 15px;"></textarea>
         <div style="display: flex; justify-content: flex-end; gap: 10px;">
-          <button id="closePgnModalBtn" style="background: transparent; border: 1px solid #666; color: #ccc; padding: 8px 16px; border-radius: 4px; cursor: pointer;">Cancel</button>
-          <button id="submitPgnBtn" style="background: #4caf50; border: none; color: white; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold;">Load</button>
+          <button id="closePgnModalBtn" style="background: transparent; border: 1px solid #888; color: #ccc; padding: 8px 16px; border-radius: 4px; cursor: pointer;">Cancel</button>
+          <button id="submitPgnBtn" style="background: #2d7191; border: none; color: white; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold;">Load</button>
         </div>
       </div>
     </div>

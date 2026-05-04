@@ -43,7 +43,7 @@ export function renderMovesList(moves, elementId, isAlternative = false) {
   ul.innerHTML = "";
 
   if (!moves || moves.length === 0) {
-    ul.innerHTML = `<li style="color:#666; font-style:italic; pointer-events: none;">N/A ${
+    ul.innerHTML = `<li style="color:#888; font-style:italic; pointer-events: none;">N/A ${
       isAlternative ? "(Starting Pos)" : ""
     }</li>`;
     return;
