@@ -289,7 +289,7 @@ def get_best_opening_name(fen: str) -> str:
         fen (str): The FEN string to check.
 
     Returns:
-        str: The matched opening name, or "Custom position" / "Initial Position".
+        str: The matched opening name, or "Custom Position" / "Starting Position".
     """
     parts: List[str] = fen.split()
     fen_key_3: str = " ".join(parts[:3])
@@ -298,12 +298,12 @@ def get_best_opening_name(fen: str) -> str:
     names: List[str] = SORTED_OPENINGS_MAP.get(fen_key_3) or SORTED_OPENINGS_MAP.get(fen_key_2) or []
     
     if not names:
-        return "Custom position"
+        return "Custom Position"
 
-    filtered_names: List[str] = [n for n in names if n.lower() != "initial position"]
+    filtered_names: List[str] = [n for n in names if n.lower() != "Starting Position"]
     
     if not filtered_names:
-        return "Initial Position"
+        return "Starting Position"
 
     filtered_names.sort()
     return filtered_names[0]
@@ -360,8 +360,8 @@ def analyze() -> Response:
     board = chess.Board(fen)
     detected_opening = get_best_opening_name(fen)
 
-    if board.fullmove_number <= 1 and detected_opening.lower() == "custom position":
-        detected_opening = "Initial Position"
+    if board.fullmove_number <= 1 and detected_opening.lower() == "Custom Position":
+        detected_opening = "Starting Position"
 
     limit = chess.engine.Limit(depth=depth)
 
