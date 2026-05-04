@@ -189,12 +189,9 @@ function sqToXY(sq, sqSize, orient) {
 }
 
 /**
- * Asks the backend for a full analysis of the current position and updates
- * every dependent UI element (eval bar, top moves, alternatives, arrows,
- * classification, opening name).
- *
- * @param {string|null} [prev_fen=null] - FEN before the most recent move.
- * @param {string|null} [last_move_uci=null] - UCI of the most recent move.
+ * Asks the backend for a full analysis and updates the UI.
+ * Now includes filtering logic to hide moves that are significantly worse 
+ * than the top engine choice.
  */
 export async function analyzeCurrentPosition(
   prev_fen = null,
@@ -204,8 +201,16 @@ export async function analyzeCurrentPosition(
   const topMovesEl = document.getElementById("topMoves");
   const openingEl = document.getElementById("openingName");
 
+  /**
+   * SCORE_THRESHOLD (Delta):
+   * If a move is more than 1.0 pawns worse than the best move, it is hidden.
+   * This prevents showing blunders as "suggested" alternatives.
+   */
+  const SCORE_THRESHOLD = 1.0;
+
   if (topMovesEl)
     topMovesEl.innerHTML = "<li style='color:#888;'>Analyzing…</li>";
+  
   renderArrows([]);
   renderClassification(null);
 
@@ -217,45 +222,63 @@ export async function analyzeCurrentPosition(
       last_move_uci,
     });
 
-    state.topMovesCache = data.top_moves;
+    /**
+     * Helper: filterMoves
+     * Filters an array of moves by comparing their scores to the best move (index 0).
+     */
+    const filterMoves = (moves) => {
+      if (!moves || moves.length === 0) return [];
+      
+      const bestScore = moves[0].score;
+      
+      return moves.filter((move, index) => {
+        // Always keep the best move
+        if (index === 0) return true; 
+        
+        // Calculate how much worse this move is compared to the best one
+        // We use Math.abs to handle both White (+) and Black (-) perspectives
+        const delta = Math.abs(bestScore - move.score);
+        return delta <= SCORE_THRESHOLD;
+      });
+    };
+
+    // Filter both Top Moves and Alternative Moves
+    const filteredTopMoves = filterMoves(data.top_moves);
+    const filteredAltMoves = filterMoves(data.alternative_moves);
+
+    // Update state and UI with filtered data
+    state.topMovesCache = filteredTopMoves;
     updateEvalBar(data.eval);
-    renderMovesList(data.top_moves, "topMoves", false);
-    renderMovesList(data.alternative_moves, "altMoves", true);
+    
+    // Render only the moves that passed the filter
+    renderMovesList(filteredTopMoves, "topMoves", false);
+    renderMovesList(filteredAltMoves, "altMoves", true);
+    
     renderClassification(data.classification);
-    renderArrows(data.top_moves);
+    
+    // Arrows on the board will now strictly match the filtered list
+    renderArrows(filteredTopMoves);
 
-    // --- Opening's name persistency ---
-
-    // Update state only if a real opening name is found
+    // --- Opening & Player UI Logic ---
     if (data.opening && data.opening !== "Custom Position" && data.opening !== "Starting Position") {
       state.currentOpeningName = data.opening;
     }
 
-    // Opening's name assignment
     let displayName = "Custom Position";
     if (state.currentOpeningName !== "Starting Position" && state.currentOpeningName !== "Custom Position") {
       displayName = state.currentOpeningName;
     }
 
-    // Move 0 is always a Starting Position
     if (state.game_fen === "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1") {
       displayName = "Starting Position";
     }
 
-    // Add players names prefixes
     if (openingEl) {
       const white = state.whitePlayer;
       const black = state.blackPlayer;
-    
-      let prefix = "";
-    
-      if (white && black) {
-        prefix = `⚪ ${white} vs ⚫ ${black} — `;
-      }
-    
+      let prefix = (white && black) ? `⚪ ${white} vs ⚫ ${black} — ` : "";
       openingEl.textContent = prefix + displayName;
     }
-    // --------------------------------------------------
 
   } catch (e) {
     console.error("Error during analysis:", e);
