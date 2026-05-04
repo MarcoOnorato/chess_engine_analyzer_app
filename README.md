@@ -15,7 +15,8 @@ A real-time chess analysis web app powered by Stockfish engine, Flask backend, a
 - Opening recognition from PGN database  
 - PGN loader with timeline navigation  
 - Variation tracking (main line vs deviations)  
-- Legal move validation API  
+- Legal move validation API
+- Chess.com and Lichess support to analyze a player public games
 
 ---
 
