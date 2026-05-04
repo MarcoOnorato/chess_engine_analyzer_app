@@ -11,6 +11,8 @@ import json
 import os
 from collections import OrderedDict
 from pathlib import Path
+import queue
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import chess
@@ -43,68 +45,50 @@ INVALID_OPENINGS: Dict[str, List[Dict[str, str]]] = {}
 
 
 def is_real_sacrifice(board: chess.Board, move: chess.Move) -> bool:
-    """
-    Detects if a move is a real sacrifice, ignoring false positives such as:
-    - Simple attacks
-    - Protected pieces
-    - Mates (illegal captures)
-
-    Args:
-        board (chess.Board): The current board state before the move.
-        move (chess.Move): The move to evaluate.
-
-    Returns:
-        bool: True if the move is considered a genuine sacrifice, False otherwise.
-    """
     moving_piece = board.piece_at(move.from_square)
     if not moving_piece:
         return False
 
-    my_value: int = PIECE_VALUES.get(moving_piece.piece_type, 0)
-
+    my_value = PIECE_VALUES.get(moving_piece.piece_type, 0)
     captured_piece = board.piece_at(move.to_square)
-    captured_value: int = PIECE_VALUES.get(captured_piece.piece_type, 0) if captured_piece else 0
+    captured_value = PIECE_VALUES.get(captured_piece.piece_type, 0) if captured_piece else 0
 
-    temp_board: chess.Board = board.copy()
-    temp_board.push(move)
+    board.push(move)
 
-    moved_square: chess.Square = move.to_square
-    opponent_color: chess.Color = temp_board.turn
-    my_color: chess.Color = not opponent_color
-
-    if temp_board.is_checkmate():
+    if board.is_checkmate():
+        board.pop()
         return False
 
-    legal_enemy_attackers: List[chess.Square] = []
+    moved_square = move.to_square
+    opponent_color = board.turn
+    my_color = not opponent_color
 
-    for attacker_sq in temp_board.attackers(opponent_color, moved_square):
-        attacker_piece = temp_board.piece_at(attacker_sq)
-        if not attacker_piece:
-            continue
+    legal_enemy_attackers = []
 
-        test_board: chess.Board = temp_board.copy()
-        test_move: chess.Move = chess.Move(attacker_sq, moved_square)
-
-        if test_move in test_board.legal_moves:
+    for attacker_sq in board.attackers(opponent_color, moved_square):
+        test_move = chess.Move(attacker_sq, moved_square)
+        if test_move in board.legal_moves:
             legal_enemy_attackers.append(attacker_sq)
 
-    attacked_legally: bool = len(legal_enemy_attackers) > 0
-    defended_by_me: bool = temp_board.is_attacked_by(my_color, moved_square)
+    attacked_legally = len(legal_enemy_attackers) > 0
+    defended_by_me = board.is_attacked_by(my_color, moved_square)
+
+    result = False
 
     if attacked_legally and my_value > captured_value:
         if not defended_by_me:
-            return True
+            result = True
+        else:
+            cheapest_attacker = min(
+                PIECE_VALUES[board.piece_at(sq).piece_type]  # type: ignore
+                for sq in legal_enemy_attackers
+                if board.piece_at(sq)
+            )
+            if cheapest_attacker < my_value:
+                result = True
 
-        cheapest_attacker: int = min(
-            PIECE_VALUES[temp_board.piece_at(sq).piece_type]  # type: ignore
-            for sq in legal_enemy_attackers
-            if temp_board.piece_at(sq) is not None
-        )
-
-        if cheapest_attacker < my_value:
-            return True
-
-    return False
+    board.pop()
+    return result
 
 
 def load_openings_database() -> None:
@@ -172,36 +156,41 @@ with app.app_context():
     load_openings_database()
 
 
-# --- ENGINE (Singleton) ---------------------------------------------------
+# --- ENGINE POOL ----------------------------------------------------------
 
-_engine: Optional[chess.engine.SimpleEngine] = None
+ENGINE_POOL_SIZE = max(1, (os.cpu_count() or 2) // 2)
+_engine_pool: "queue.Queue[chess.engine.SimpleEngine]" = queue.Queue()
 
+def _create_engine() -> chess.engine.SimpleEngine:
+    engine = chess.engine.SimpleEngine.popen_uci(str(STOCKFISH_PATH))
+    engine.configure({
+        "Threads": max(1, (os.cpu_count() or 2) // ENGINE_POOL_SIZE)
+    })
+    return engine
+
+def init_engine_pool() -> None:
+    for _ in range(ENGINE_POOL_SIZE):
+        _engine_pool.put(_create_engine())
 
 def get_engine() -> chess.engine.SimpleEngine:
-    """
-    Retrieves the active Stockfish engine instance. 
-    Initializes it if it doesn't already exist.
+    return _engine_pool.get()
 
-    Returns:
-        chess.engine.SimpleEngine: The active Stockfish engine.
-    """
-    global _engine
-    if _engine is None:
-        _engine = chess.engine.SimpleEngine.popen_uci(str(STOCKFISH_PATH))
-    return _engine
-
+def release_engine(engine: chess.engine.SimpleEngine) -> None:
+    _engine_pool.put(engine)
 
 @atexit.register
-def _close_engine() -> None:
-    """
-    Ensures the engine is properly closed when the application exits.
-    """
-    global _engine
-    if _engine is not None:
+def _close_engine_pool() -> None:
+    while not _engine_pool.empty():
         try:
-            _engine.quit()
+            eng = _engine_pool.get_nowait()
+            eng.quit()
         except Exception:
             pass
+
+
+# init pool at startup
+with app.app_context():
+    init_engine_pool()
 
 
 # --- MOVE CLASSIFICATION --------------------------------------------------
@@ -361,70 +350,84 @@ def extract_top_moves(info_list: List[Any], board: chess.Board) -> List[Dict[str
 
 @app.route("/api/analyze", methods=["POST"])
 def analyze() -> Response:
-    """
-    Analyzes a given board position using Stockfish.
-    
-    Expected JSON Body:
-        fen (str): The current position.
-        depth (int): Engine analysis depth (default: 14).
-        prev_fen (str|None): The previous position (for last move classification).
-        last_move_uci (str|None): The last move played.
-
-    Returns:
-        Response: JSON payload containing top 3 moves, evaluation, classification, and opening info.
-    """
     data: Dict[str, Any] = request.get_json(force=True)
+
     fen: str = data.get("fen", "")
     depth: int = int(data.get("depth", 14))
     prev_fen: Optional[str] = data.get("prev_fen")
     last_move_uci: Optional[str] = data.get("last_move_uci")
 
     board = chess.Board(fen)
-    detected_opening: str = get_best_opening_name(fen)
-    
+    detected_opening = get_best_opening_name(fen)
+
     if board.fullmove_number <= 1 and detected_opening.lower() == "custom position":
         detected_opening = "Initial Position"
 
-    engine = get_engine()
+    limit = chess.engine.Limit(depth=depth)
 
-    # Current position
-    info_list = engine.analyse(board, chess.engine.Limit(depth=depth), multipv=3)
+    # --- PARALLEL EXECUTION ---
+    def analyze_current():
+        engine = get_engine()
+        try:
+            info = engine.analyse(board, limit, multipv=3)
+            return info
+        finally:
+            release_engine(engine)
+
+    def analyze_prev():
+        if not prev_fen:
+            return None
+        engine = get_engine()
+        try:
+            prev_board = chess.Board(prev_fen)
+            info = engine.analyse(prev_board, limit, multipv=3)
+            return info
+        finally:
+            release_engine(engine)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        future_curr = executor.submit(analyze_current)
+        future_prev = executor.submit(analyze_prev)
+
+        info_list = future_curr.result()
+        prev_info_list = future_prev.result()
+
+    # --- CURRENT POSITION ---
     top_moves = extract_top_moves(info_list, board)
-    eval_score: float = top_moves[0]["score"] if top_moves else 0.0
+    eval_score = top_moves[0]["score"] if top_moves else 0.0
 
-    # Prev position
-    classification: Optional[Dict[str, Any]] = None
-    alternative_moves: List[Dict[str, Any]] = []
-    
-    if prev_fen and last_move_uci:
+    classification = None
+    alternative_moves = []
+
+    # --- PREVIOUS POSITION ---
+    if prev_fen and last_move_uci and prev_info_list:
         try:
             prev_board = chess.Board(prev_fen)
             last_move = chess.Move.from_uci(last_move_uci)
 
-            # Variants from prev position
-            prev_info_list = engine.analyse(prev_board, chess.engine.Limit(depth=depth), multipv=3)
             alternative_moves = extract_top_moves(prev_info_list, prev_board)
-            
-            best_eval_prev: Optional[int] = prev_info_list[0]["score"].relative.score(mate_score=10000)
 
-            actual_eval: Optional[int] = None
+            best_eval_prev = prev_info_list[0]["score"].relative.score(mate_score=10000)
+
+            actual_eval = None
             if info_list and "score" in info_list[0]:
                 actual_eval_raw = info_list[0]["score"].relative.score(mate_score=10000)
                 if actual_eval_raw is not None:
                     actual_eval = -actual_eval_raw
 
             raw_loss = float((best_eval_prev or 0) - (actual_eval or 0))
-            diff: float = max(0.0, raw_loss)
-            
-            is_sac: bool = is_real_sacrifice(prev_board, last_move)
+            diff = max(0.0, raw_loss)
+
+            is_sac = is_real_sacrifice(prev_board, last_move)
             label, symbol, color = classify_move(diff, is_sac)
-            
+
             classification = {
                 "label": label,
                 "symbol": symbol,
                 "color": color,
                 "diff_cp": diff,
             }
+
         except Exception as e:
             classification = {"error": str(e)}
 
@@ -432,7 +435,7 @@ def analyze() -> Response:
         "fen": fen,
         "eval": eval_score,
         "top_moves": top_moves,
-        "alternative_moves": alternative_moves, # <-- Nuovo dato restituito
+        "alternative_moves": alternative_moves,
         "classification": classification,
         "best_eval_loss": classification["diff_cp"] if classification else 0,
         "opening": detected_opening,

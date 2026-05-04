@@ -9,12 +9,14 @@
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 </head>
 <body>
 
 <header>
   <h1>♟️ Chess Analysis</h1>
+  <h4>This app is not affiliated with chess.com, lichess.org, or any other organization</h4>
 </header>
 
 <div class="main-container">
@@ -47,7 +49,6 @@
       </div>
     </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <div id="loadingOverlay" class="hidden">
       <div class="spinner"></div>
       <p id="loadingText" style="margin-top: 15px; font-weight: bold; color: #fff;">Evaluating game...</p>
@@ -55,16 +56,26 @@
   </div>
 
   <div class="right-column">
-    
-    <div class="card">
-      <div style="display: flex; gap: 10px; margin-bottom:10px; align-items: center;">
-        <button id="openingsBtn" style="flex:1;">📖 List Openings</button>
-        <label style="font-size: 0.8em; color: #aaa;">Engine Depth: 
-          <input type="number" id="depth" value="14" min="8" max="30" style="width:45px; padding: 5px; margin-left: 5px;" />
-        </label>
+    <div id="loadPanel" class="card load-panel">
+      <button id="loadPanelToggle" class="load-panel-header" aria-expanded="true" aria-controls="loadPanelBody">
+        <span class="load-panel-title">📂 Load Game</span>
+        <span class="load-panel-chevron" aria-hidden="true">▾</span>
+      </button>
+
+      <div id="loadPanelBody" class="load-panel-body">
+        <div style="display: flex; gap: 10px; margin-bottom:10px; align-items: center;">
+          <button id="openingsBtn" style="flex:1;">📖 Openings</button>
+          <button id="openChessComBtn" style="flex:1; background-color: #69923e; border-color: #587a34;">Load from Chess.com</button>
+          <button id="openLichessBtn" style="flex:1; background-color: #444; border-color: #555;">Load from Lichess</button>
+        </div>
+        <div style="margin-bottom:10px; text-align: right;">
+          <label style="font-size: 0.8em; color: #aaa;">Engine Depth:
+            <input type="number" id="depth" value="11" min="8" max="30" style="width:45px; padding: 5px; margin-left: 5px;" />
+          </label>
+        </div>
+        <textarea id="pgnInput" rows="2" placeholder="Load PGN (e.g., 1. e4 e5 2. Nf3...)" style="min-height: 75px; width:100%; box-sizing:border-box; background:#333; color:white; border:1px solid #444; padding: 8px; border-radius: 4px; resize: vertical;"></textarea>
+        <button id="loadPgnBtn" style="width:100%; margin-top:5px; background: #4caf50; border-color: #4caf50;">Load PGN</button>
       </div>
-      <textarea id="pgnInput" rows="2" placeholder="Load PGN (e.g., 1. e4 e5 2. Nf3...)" style="min-height: 75px; width:100%; box-sizing:border-box; background:#333; color:white; border:1px solid #444; padding: 8px; border-radius: 4px; resize: vertical;"></textarea>
-      <button id="loadPgnBtn" style="width:100%; margin-top:5px; background: #4caf50; border-color: #4caf50;">Load PGN</button>
     </div>
 
     <div class="card">
@@ -138,6 +149,7 @@
   </div>
 </div>
 
+<!-- OPENINGS MODAL -->
 <div id="openingsModal" class="modal hidden">
   <div class="modal-content">
     <div class="modal-header">
@@ -152,6 +164,44 @@
   </div>
 </div>
 
+<!-- CHESS.COM MODAL -->
+<div id="chessComModal" class="modal hidden">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Import from Chess.com</h2>
+      <button class="close-modal" id="closeChessCom">&times;</button>
+    </div>
+    <div class="search-container" style="display: flex; gap: 10px;">
+      <input type="text" id="ccUsername" class="search-input" placeholder="Username" style="flex: 2;">
+      <input type="number" id="ccYear" class="search-input" placeholder="YYYY" style="flex: 1;" min="2000" max="2030">
+      <input type="number" id="ccMonth" class="search-input" placeholder="MM" style="flex: 1;" min="1" max="12">
+      <button id="ccFetchBtn" style="background: #26bbff; border-color: #26bbff; font-weight: bold;">Search</button>
+    </div>
+    <div id="ccGamesList" style="padding: 10px 25px 25px; overflow-y: auto; max-height: 400px;">
+      <div style="color: #888; text-align: center; margin-top: 20px;">Enter a username to fetch games.</div>
+    </div>
+  </div>
+</div>
+
+<!-- LICHESS MODAL -->
+<div id="lichessModal" class="modal hidden">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Import from Lichess</h2>
+      <button class="close-modal" id="closeLichess">&times;</button>
+    </div>
+    <div class="search-container" style="display: flex; gap: 10px;">
+      <input type="text" id="liUsername" class="search-input" placeholder="Lichess Username" style="flex: 3;">
+      <input type="number" id="liCount" class="search-input" placeholder="How many games?" value="10" style="flex: 1;">
+      <button id="liFetchBtn" style="background: #f1c40f; color: black; border-color: #f1c40f; font-weight: bold;">Search</button>
+    </div>
+    <div id="liGamesList" style="padding: 10px 25px 25px; overflow-y: auto; max-height: 400px;">
+      <div style="color: #888; text-align: center; margin-top: 20px;">Enter username to fetch recent games.</div>
+    </div>
+  </div>
+</div>
+
+<!-- PROMOTION MODAL -->
 <div id="promoModal" class="promo-modal hidden">
   <div class="promo-dialog">
     <div class="promo-title">Promote Pawn</div>
@@ -160,6 +210,7 @@
   </div>
 </div>
 
-<script src="static/app.js"></script>
+<!-- ES module entry point. All other JS files are imported from main.js. -->
+<script type="module" src="static/js/main.js"></script>
 </body>
 </html>
