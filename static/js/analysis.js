@@ -175,7 +175,7 @@ export function renderArrows(moves) {
   svg.style.left = "0";
   svg.style.pointerEvents = "none";
 
-  const colors = ["#00d26a", "#26bbff", "#f0c15c"];
+  const colors = ["#0C6499", "#1399EC", "#8AD2FF"];
 
   moves.forEach((m, i) => {
     const [fx, fy] = sqToXY(m.from, sqSize, orient);
