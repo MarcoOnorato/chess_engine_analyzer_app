@@ -406,12 +406,15 @@ def analyze() -> Response:
     top = top_moves[0] if top_moves else None
 
     if top:
-        if top["mate"] is not None:
-            eval_score = 99.0 if top["mate"] > 0 else -99.0
+        if top.get("mate") is not None:
+            eval_score = None
+            eval_mate = top["mate"]
         else:
             eval_score = top["score"]
+            eval_mate = None
     else:
         eval_score = 0.0
+        eval_mate = None
 
     classification = None
     alternative_moves = []
@@ -448,9 +451,17 @@ def analyze() -> Response:
         except Exception as e:
             classification = {"error": str(e)}
 
+    result = None
+
+    if board.is_game_over():
+        outcome = board.outcome()
+        if outcome:
+            result = outcome.result()  # "1-0", "0-1", "1/2-1/2"
+
     return jsonify({
         "fen": fen,
         "eval": eval_score,
+        "eval_mate": eval_mate,
         "top_moves": top_moves,
         "alternative_moves": alternative_moves,
         "classification": classification,
@@ -459,6 +470,7 @@ def analyze() -> Response:
         "turn": "white" if board.turn else "black",
         "is_game_over": board.is_game_over(),
         "legal_moves": [m.uci() for m in board.legal_moves],
+        "result": result,
     })
 
 

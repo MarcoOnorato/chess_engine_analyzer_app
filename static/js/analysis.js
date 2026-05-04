@@ -20,17 +20,43 @@ import { playMoveUci, playAlternativeMove } from "./moves.js";
  *
  * @param {number} score - Engine evaluation in pawns; clamped to ±10 for display.
  */
-export function updateEvalBar(score) {
+export function updateEvalBar(score, result = null, mate = null) {
+  const evalText = document.getElementById("evalText");
+  const evalFill = document.getElementById("evalFill");
+
+  // If game ended
+  if (result) {
+    evalText.textContent = result;
+
+    if (result === "1-0") evalFill.style.height = "100%";
+    else if (result === "0-1") evalFill.style.height = "0%";
+    else evalFill.style.height = "50%";
+
+    return;
+  }
+
+  // Forced mate lines
+  if (mate !== null && mate !== undefined) {
+    evalText.textContent = mate > 0
+      ? `M${mate}`
+      : `-M${Math.abs(mate)}`;
+
+    // Full eval bar for winner
+    evalFill.style.height = mate > 0 ? "100%" : "0%";
+    return;
+  }
+
+  // Normal eval
   if (score === null || score === undefined) {
-    document.getElementById("evalText").textContent = "M";
+    evalText.textContent = "–";
     return;
   }
 
   const clamped = Math.max(-10, Math.min(10, score));
   const pct = ((clamped + 10) / 20) * 100;
 
-  document.getElementById("evalFill").style.height = pct + "%";
-  document.getElementById("evalText").textContent =
+  evalFill.style.height = pct + "%";
+  evalText.textContent =
     (score >= 0 ? "+" : "") + score.toFixed(1);
 }
 
@@ -270,7 +296,7 @@ export async function analyzeCurrentPosition(
 
     // Update state and UI with filtered data
     state.topMovesCache = filteredTopMoves;
-    updateEvalBar(data.eval);
+    updateEvalBar(data.eval, data.result, data.eval_mate);
     
     // Render only the moves that passed the filter
     renderMovesList(filteredTopMoves, "topMoves", false);
