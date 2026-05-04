@@ -16,12 +16,13 @@ body {
 
 header {
   text-align: center;
-  padding: 10px 0;
+  padding: 5px 0;
   border-bottom: 1px solid #333;
-  margin-bottom: 10px;
+  margin-bottom: 5px;
 }
 
 h1 { margin: 0; font-size: 1.5em; color: #fff; }
+h4 { margin: 0; font-size: 0.75em; color: #fff; }
 
 .main-container {
   display: flex;
@@ -150,15 +151,6 @@ h1 { margin: 0; font-size: 1.5em; color: #fff; }
   gap: 15px;
 }
 
-.analysis-header {
-  flex: 1; /* si dividono lo spazio 50/50 */
-  display: flex;
-  background: #222;
-  border: 1px solid #333;
-  border-radius: 8px;
-  padding: 15px;
-}
-
 button, input {
   background: #333; color: white; border: 1px solid #555;
   padding: 8px; border-radius: 4px; cursor: pointer;
@@ -226,7 +218,7 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   flex-direction: column;
   width: 100%;
   min-height: 500px;
-  max-height: 650px;
+  max-height: 575px;
 }
 
 .history-columns {
@@ -252,7 +244,7 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   flex-grow: 1;
   font-size: 0.95em;
   line-height: 1.8;
-  max-height: 38vh;
+  max-height: 35vh;
 }
 
 .history-row {
@@ -414,4 +406,64 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 #evalChart {
   width: 100% !important;
   height: 100% !important;
+}
+
+/* ==========================================================================
+    COLLAPSIBLE LOAD PANEL
+    ========================================================================== */
+.load-panel {
+  padding: 0; /* Override .card padding so the header sits flush */
+  overflow: hidden;
+}
+
+.load-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px 15px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: #eee;
+  font-family: inherit;
+  font-size: 0.95em;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.load-panel-header:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.load-panel-title {
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.load-panel-chevron {
+  color: #888;
+  font-size: 1.5em;
+  transition: transform 0.3s ease;
+  display: inline-block;
+}
+
+/* Body slides closed via max-height + opacity. */
+.load-panel-body {
+  padding: 0 15px 15px 15px;
+  max-height: 600px;        /* Generous upper bound for the open state */
+  opacity: 1;
+  transition: max-height 0.35s ease, opacity 0.25s ease, padding 0.35s ease;
+  overflow: hidden;
+}
+
+.load-panel.collapsed .load-panel-body {
+  max-height: 0;
+  opacity: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.load-panel.collapsed .load-panel-chevron {
+  transform: rotate(-90deg);
 }
