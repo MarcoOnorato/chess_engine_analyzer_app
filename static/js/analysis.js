@@ -21,8 +21,14 @@ import { playMoveUci, playAlternativeMove } from "./moves.js";
  * @param {number} score - Engine evaluation in pawns; clamped to ±10 for display.
  */
 export function updateEvalBar(score) {
+  if (score === null || score === undefined) {
+    document.getElementById("evalText").textContent = "M";
+    return;
+  }
+
   const clamped = Math.max(-10, Math.min(10, score));
   const pct = ((clamped + 10) / 20) * 100;
+
   document.getElementById("evalFill").style.height = pct + "%";
   document.getElementById("evalText").textContent =
     (score >= 0 ? "+" : "") + score.toFixed(1);
@@ -51,6 +57,17 @@ export function renderMovesList(moves, elementId, isAlternative = false) {
 
   moves.forEach((m, i) => {
     const li = document.createElement("li");
+    let scoreText;
+
+    if (m.mate !== null && m.mate !== undefined) {
+      scoreText = m.mate > 0
+        ? `M${m.mate}`
+        : `-M${Math.abs(m.mate)}`;
+    } else if (m.score !== null && m.score !== undefined) {
+      scoreText = `${m.score >= 0 ? "+" : ""}${m.score.toFixed(2)}`;
+    } else {
+      scoreText = "–"; // fallback
+    }
 
     const mainRow = document.createElement("div");
     mainRow.className = "move-row-main";
@@ -59,7 +76,7 @@ export function renderMovesList(moves, elementId, isAlternative = false) {
         <span class="rank">${i + 1}.</span>
         <span class="san">${m.san}</span>
       </span>
-      <span class="score">${m.score >= 0 ? "+" : ""}${m.score.toFixed(2)}</span>
+      <span class="score">${scoreText}</span>
     `;
 
     const continuationRow = document.createElement("div");
@@ -228,16 +245,21 @@ export async function analyzeCurrentPosition(
      */
     const filterMoves = (moves) => {
       if (!moves || moves.length === 0) return [];
-      
-      const bestScore = moves[0].score;
-      
+    
+      const best = moves[0];
+    
       return moves.filter((move, index) => {
-        // Always keep the best move
-        if (index === 0) return true; 
-        
-        // Calculate how much worse this move is compared to the best one
-        // We use Math.abs to handle both White (+) and Black (-) perspectives
-        const delta = Math.abs(bestScore - move.score);
+        if (index === 0) return true;
+    
+        // If any is mate keep only mate
+        if (best.mate !== null || move.mate !== null) {
+          return move.mate !== null;
+        }
+    
+        // Safety
+        if (best.score == null || move.score == null) return false;
+    
+        const delta = Math.abs(best.score - move.score);
         return delta <= SCORE_THRESHOLD;
       });
     };
