@@ -330,8 +330,16 @@ def extract_top_moves(info_list: List[Any], board: chess.Board) -> List[Dict[str
         cp = 0.0
         if score.is_mate():
             mate_moves = score.mate()
-            if mate_moves is not None:
-                cp = 99.0 if mate_moves > 0 else -99.0
+            moves.append({
+                "uci": uci_str,
+                "san": board.san(move),
+                "from": uci_str[:2],
+                "to": uci_str[2:4],
+                "score": None,  # niente cp
+                "mate": mate_moves,  # <-- QUESTO è il dato vero
+                "continuation": " ".join(continuation_san)
+            })
+            continue
         else:
             engine_score = score.score()
             if engine_score is not None:
@@ -343,6 +351,7 @@ def extract_top_moves(info_list: List[Any], board: chess.Board) -> List[Dict[str
             "from": uci_str[:2],
             "to": uci_str[2:4],
             "score": cp,
+            "mate": None,
             "continuation": " ".join(continuation_san)
         })
     return moves
@@ -394,7 +403,15 @@ def analyze() -> Response:
 
     # --- CURRENT POSITION ---
     top_moves = extract_top_moves(info_list, board)
-    eval_score = top_moves[0]["score"] if top_moves else 0.0
+    top = top_moves[0] if top_moves else None
+
+    if top:
+        if top["mate"] is not None:
+            eval_score = 99.0 if top["mate"] > 0 else -99.0
+        else:
+            eval_score = top["score"]
+    else:
+        eval_score = 0.0
 
     classification = None
     alternative_moves = []
