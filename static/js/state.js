@@ -24,6 +24,8 @@ export const STARTING_FEN =
 /**
  * Live application state. Mutated in place by the various modules.
  * @type {{
+ *   whitePlayer: string,
+ *   blackPlayer: string,
  *   currentOpeningName: string,
  *   is_moving: boolean,
  *   board: object|null,
@@ -44,6 +46,8 @@ export const STARTING_FEN =
  * }}
  */
 export const state = {
+  whitePlayer: "",
+  blackPlayer: "",
   currentOpeningName: "Starting Position",
   is_moving: false,
   board: null,

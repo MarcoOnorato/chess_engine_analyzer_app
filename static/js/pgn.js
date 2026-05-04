@@ -60,10 +60,33 @@ export function bindPgnLoader() {
 /**
  * Loads and analyzes the PGN.
  */
+/**
+ * Loads and analyzes the PGN.
+ */
+/**
+ * Loads and analyzes the PGN.
+ */
 export async function loadPgn(directPgn = null) {
   const txt = directPgn ? directPgn.trim() : document.getElementById("pgnInput").value.trim();
-  
   if (!txt) return false;
+
+  // --- Player names ---
+  const whiteMatch = txt.match(/\[White\s+"([^"]+)"\]/);
+  const blackMatch = txt.match(/\[Black\s+"([^"]+)"\]/);
+
+  state.whitePlayer = (whiteMatch && whiteMatch[1] !== "?") ? whiteMatch[1] : "";
+  state.blackPlayer = (blackMatch && blackMatch[1] !== "?") ? blackMatch[1] : "";
+
+  // Always reset
+  state.playersPrefix = "";
+
+  // Update name only if both players exist
+  if (state.whitePlayer && state.blackPlayer) {
+    state.playersPrefix = `⚪ ${state.whitePlayer} vs ⚫ ${state.blackPlayer} — `;
+  }
+
+  state.currentOpeningName = "Starting Position";
+  // -----------------------------
 
   const depth = parseInt(document.getElementById("depth").value, 10) || 11;
   const overlay = document.getElementById("loadingOverlay");
@@ -76,6 +99,7 @@ export async function loadPgn(directPgn = null) {
     state.pgn_moves = data.moves || [];
     state.pgn_fens = data.fens || [];
   
+    // Analysis
     for (let i = 0; i < state.pgn_moves.length; i++) {
       loadingText.textContent = `Analyzing move ${i + 1} of ${state.pgn_moves.length}...`;
 
@@ -89,6 +113,11 @@ export async function loadPgn(directPgn = null) {
       state.pgn_moves[i].evalData = analysis.classification;
       state.pgn_moves[i].eval = analysis.eval;
       state.pgn_moves[i].cpLoss = Math.max(0, analysis.best_eval_loss || 0);
+
+      // Update opening's name only if a real one is found
+      if (analysis.opening && analysis.opening !== "Custom Position" && analysis.opening !== "Starting Position") {
+        state.currentOpeningName = analysis.opening;
+      }
     }
 
     state.historyMain = state.pgn_moves.map((m, i) => ({
@@ -115,6 +144,13 @@ export async function loadPgn(directPgn = null) {
     updatePgnNav();
     calculateGameAccuracy();
     renderEvalChart(jumpToMainLineFromChart);
+
+    // Update opening name after loading
+    const displayEl = document.getElementById("openingName");
+    let finalDisplay = (state.currentOpeningName === "Starting Position" || state.currentOpeningName === "Custom Position") 
+                       ? "Custom Position" 
+                       : state.currentOpeningName;
+    if (displayEl) displayEl.textContent = state.playersPrefix + finalDisplay;
 
     overlay.classList.add("hidden");
     collapseLoadPanel();

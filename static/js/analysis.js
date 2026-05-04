@@ -221,18 +221,42 @@ export async function analyzeCurrentPosition(
     updateEvalBar(data.eval);
     renderMovesList(data.top_moves, "topMoves", false);
     renderMovesList(data.alternative_moves, "altMoves", true);
-
     renderClassification(data.classification);
     renderArrows(data.top_moves);
 
-    if (data.opening && data.opening !== "Custom Position") {
+    // --- Opening's name persistency ---
+
+    // Update state only if a real opening name is found
+    if (data.opening && data.opening !== "Custom Position" && data.opening !== "Starting Position") {
       state.currentOpeningName = data.opening;
-      openingEl.textContent = state.currentOpeningName;
-    } else {
-      openingEl.textContent = !state.in_deviation
-        ? state.currentOpeningName || "Starting Position"
-        : "Custom Position";
     }
+
+    // Opening's name assignment
+    let displayName = "Custom Position";
+    if (state.currentOpeningName !== "Starting Position" && state.currentOpeningName !== "Custom Position") {
+      displayName = state.currentOpeningName;
+    }
+
+    // Move 0 is always a Starting Position
+    if (state.game_fen === "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1") {
+      displayName = "Starting Position";
+    }
+
+    // Add players names prefixes
+    if (openingEl) {
+      const white = state.whitePlayer;
+      const black = state.blackPlayer;
+    
+      let prefix = "";
+    
+      if (white && black) {
+        prefix = `⚪ ${white} vs ⚫ ${black} — `;
+      }
+    
+      openingEl.textContent = prefix + displayName;
+    }
+    // --------------------------------------------------
+
   } catch (e) {
     console.error("Error during analysis:", e);
     if (topMovesEl) {

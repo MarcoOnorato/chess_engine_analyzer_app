@@ -35,6 +35,13 @@ function renderOpeningsList(filterText = "") {
     `;
     item.onclick = () => {
       modal.classList.add("hidden");
+      
+      // Imposta esplicitamente il nome dell'apertura nello stato e nella UI
+      state.currentOpeningName = name;
+      const displayEl = document.getElementById("openingName");
+      if (displayEl) {
+        displayEl.textContent = name;
+      }
 
       if (window.loadAndAnalyze) {
         window.loadAndAnalyze(pgnString);
