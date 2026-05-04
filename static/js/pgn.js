@@ -23,34 +23,59 @@ import { calculateGameAccuracy, renderEvalChart } from "./accuracy.js";
 import { collapseLoadPanel } from "./collapsible.js";
 
 /**
- * Wires the "Load PGN" button to the loading pipeline.
+ * Wires the PGN loading modal and buttons to the pipeline.
  */
 export function bindPgnLoader() {
-  document.getElementById("loadPgnBtn").onclick = loadPgn;
+  const modal = document.getElementById("pgnModal");
+  const openModalBtn = document.getElementById("openPgnModalBtn");
+  const closeModalBtn = document.getElementById("closePgnModalBtn");
+  const submitPgnBtn = document.getElementById("submitPgnBtn");
+  const pgnInput = document.getElementById("pgnInput");
+
+  window.loadAndAnalyze = async (pgnString) => {
+    const success = await loadPgn(pgnString);
+    if (success) {
+      modal.style.display = "none";
+      pgnInput.value = "";
+    }
+  };
+
+  openModalBtn.onclick = () => { modal.style.display = "flex"; pgnInput.focus(); };
+  closeModalBtn.onclick = () => { modal.style.display = "none"; };
+
+  submitPgnBtn.onclick = () => window.loadAndAnalyze();
+
+  pgnInput.onkeydown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      window.loadAndAnalyze();
+    }
+  };
 }
 
 /**
  * Reads the PGN text area, parses + analyzes the game, and refreshes the UI.
+ * @returns {Promise<boolean>} True if successful, false otherwise.
  */
-async function loadPgn() {
-  const txt = document.getElementById("pgnInput").value.trim();
-  if (!txt) return;
+/**
+ * Loads and analyzes the PGN.
+ */
+export async function loadPgn(directPgn = null) {
+  const txt = directPgn ? directPgn.trim() : document.getElementById("pgnInput").value.trim();
+  
+  if (!txt) return false;
 
-  const depth = parseInt(document.getElementById("depth").value, 10) || 14;
+  const depth = parseInt(document.getElementById("depth").value, 10) || 11;
   const overlay = document.getElementById("loadingOverlay");
   const loadingText = document.getElementById("loadingText");
+  
   overlay.classList.remove("hidden");
 
   try {
     const data = await api("/api/load_pgn", { pgn: txt });
     state.pgn_moves = data.moves || [];
     state.pgn_fens = data.fens || [];
-
-    // -----------------------------------------------------------------------
-    // Analyze every move sequentially. Sequential rather than parallel keeps
-    // the engine's load predictable on the backend and lets us update the
-    // progress label in order.
-    // -----------------------------------------------------------------------
+  
     for (let i = 0; i < state.pgn_moves.length; i++) {
       loadingText.textContent = `Analyzing move ${i + 1} of ${state.pgn_moves.length}...`;
 
@@ -66,9 +91,6 @@ async function loadPgn() {
       state.pgn_moves[i].cpLoss = Math.max(0, analysis.best_eval_loss || 0);
     }
 
-    // -----------------------------------------------------------------------
-    // Build the main-line history array from the analyzed moves.
-    // -----------------------------------------------------------------------
     state.historyMain = state.pgn_moves.map((m, i) => ({
       san: m.san,
       uci: m.uci,
@@ -79,20 +101,13 @@ async function loadPgn() {
       eval: m.eval,
     }));
 
-    // -----------------------------------------------------------------------
-    // Reset deviation state and park the cursor at the end of the game.
-    // -----------------------------------------------------------------------
-    state.historyVariations = [];
-    state.deviationStartIndex = 0;
     state.pgn_index = state.pgn_moves.length;
-    state.currentMainlineIndex = state.pgn_moves.length;
-    state.currentVariationIndex = -1;
-    state.in_deviation = false;
     state.game_fen = state.pgn_fens[state.pgn_moves.length];
-
+    
     const moveSlider = document.getElementById("moveSlider");
     moveSlider.max = state.pgn_moves.length;
     moveSlider.value = state.pgn_moves.length;
+    document.getElementById("sliderMax").textContent = state.pgn_moves.length;
 
     state.board.position(fenToPos(state.game_fen));
 
@@ -102,20 +117,13 @@ async function loadPgn() {
     renderEvalChart(jumpToMainLineFromChart);
 
     overlay.classList.add("hidden");
-
-    // Final position analysis so the side panels reflect the end state.
-    analyzeCurrentPosition(
-      state.pgn_moves.length > 0 ? state.pgn_fens[state.pgn_moves.length - 1] : null,
-      state.pgn_moves.length > 0
-        ? state.pgn_moves[state.pgn_moves.length - 1].uci
-        : null
-    );
-
-    // Successful load → tuck the import controls away to give the board room.
     collapseLoadPanel();
+    
+    return true; 
   } catch (e) {
     overlay.classList.add("hidden");
     alert("Error loading PGN");
     console.error(e);
+    return false;
   }
 }

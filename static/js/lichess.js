@@ -84,9 +84,13 @@ export function bindLichess() {
           `;
   
           item.onclick = () => {
-            document.getElementById("pgnInput").value = game.pgn;
-            document.getElementById("loadPgnBtn").click();
             modal.classList.add("hidden");
+            
+            if (window.loadAndAnalyze) {
+              window.loadAndAnalyze(game.pgn);
+            } else {
+              console.error("loadAndAnalyze not found in window");
+            }
           };
   
           listEl.appendChild(item);
