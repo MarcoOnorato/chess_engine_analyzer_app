@@ -293,9 +293,40 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   cursor: pointer;
 }
 .moves-list li:hover { color: #26bbff; }
-.moves-list .rank { color: #888; width: 20px;}
+.moves-list .rank { width: 20px;}
 .moves-list .san { font-weight: bold; flex-grow: 1; margin-left: 10px;}
-.moves-list .score { color: #aaa; text-align: right;}
+.moves-list .score { text-align: right;}
+
+.score {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.8rem;
+  min-width: 52px;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+
+/* White advantage */
+.pill-white {
+  background: #ffffff !important;
+  color: #000000 !important;
+  border: 1px solid #000000 !important;
+}
+
+/* Black advantage */
+.pill-black {
+  background: #000000 !important;
+  color: #ffffff !important;
+  border: 1px solid #000000 !important;
+}
+
+/* Neutral */
+.pill-neutral {
+  background: #21262d;
+  color: #8b949e;
+  border: 1px solid #30363d;
+}
 
 /* ==========================================================================
     MODALS (Openings & Promotions)

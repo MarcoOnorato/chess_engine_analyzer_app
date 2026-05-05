@@ -75,7 +75,7 @@ export function renderMovesList(moves, elementId, isAlternative = false) {
   ul.innerHTML = "";
 
   if (!moves || moves.length === 0) {
-    ul.innerHTML = `<li style="color:#888; font-style:italic; pointer-events: none;">N/A ${
+    ul.innerHTML = `<li style="font-style:italic; pointer-events: none;">N/A ${
       isAlternative ? "(Starting Pos)" : ""
     }</li>`;
     return;
@@ -84,15 +84,23 @@ export function renderMovesList(moves, elementId, isAlternative = false) {
   moves.forEach((m, i) => {
     const li = document.createElement("li");
     let scoreText;
+    let pillClass = "pill-neutral";
 
     if (m.mate !== null && m.mate !== undefined) {
-      scoreText = m.mate > 0
-        ? `M${m.mate}`
-        : `-M${Math.abs(m.mate)}`;
+      scoreText = m.mate > 0 ? `M${m.mate}` : `-M${Math.abs(m.mate)}`;
+      pillClass = m.mate > 0 ? "pill-white" : "pill-black";
+
     } else if (m.score !== null && m.score !== undefined) {
       scoreText = `${m.score >= 0 ? "+" : ""}${m.score.toFixed(2)}`;
+
+      const EPS = 0.2; // dead zone per evitare rumore visivo
+
+      if (m.score > EPS) pillClass = "pill-white";
+      else if (m.score < -EPS) pillClass = "pill-black";
+      else pillClass = "pill-neutral";
+
     } else {
-      scoreText = "–"; // fallback
+      scoreText = "–";
     }
 
     const mainRow = document.createElement("div");
@@ -102,7 +110,7 @@ export function renderMovesList(moves, elementId, isAlternative = false) {
         <span class="rank">${i + 1}.</span>
         <span class="san">${m.san}</span>
       </span>
-      <span class="score">${scoreText}</span>
+      <span class="score ${pillClass}">${scoreText}</span>
     `;
 
     const continuationRow = document.createElement("div");
@@ -252,7 +260,7 @@ export async function analyzeCurrentPosition(
   const SCORE_THRESHOLD = 1.0;
 
   if (topMovesEl)
-    topMovesEl.innerHTML = "<li style='color:#888;'>Analyzing…</li>";
+    topMovesEl.innerHTML = "<li>Analyzing…</li>";
   
   renderArrows([]);
   renderClassification(null);
