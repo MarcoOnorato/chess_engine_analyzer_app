@@ -112,6 +112,7 @@ export async function loadPgn(directPgn = null) {
 
       state.pgn_moves[i].evalData = analysis.classification;
       state.pgn_moves[i].eval = analysis.eval;
+      state.pgn_moves[i].eval_mate = analysis.eval_mate;
       state.pgn_moves[i].cpLoss = Math.max(0, analysis.best_eval_loss || 0);
 
       // Update opening's name only if a real one is found
@@ -128,6 +129,7 @@ export async function loadPgn(directPgn = null) {
       evalData: m.evalData,
       cpLoss: m.cpLoss,
       eval: m.eval,
+      eval_mate: m.eval_mate,
     }));
 
     state.pgn_index = state.pgn_moves.length;
