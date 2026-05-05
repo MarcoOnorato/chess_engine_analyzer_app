@@ -140,10 +140,18 @@ export async function loadPgn(directPgn = null) {
 
     state.board.position(fenToPos(state.game_fen));
 
+    let prev_fen = null;
+    let last_move_uci = null;
+      if (state.pgn_index > 0) {
+        prev_fen = state.pgn_fens[state.pgn_index - 1];
+        last_move_uci = state.pgn_moves[state.pgn_index - 1].uci;
+        state.currentMainlineIndex = state.pgn_index;
+      }
     renderHistory();
     updatePgnNav();
     calculateGameAccuracy();
     renderEvalChart(jumpToMainLineFromChart);
+    analyzeCurrentPosition(prev_fen, last_move_uci);
 
     // Update opening name after loading
     const displayEl = document.getElementById("openingName");
