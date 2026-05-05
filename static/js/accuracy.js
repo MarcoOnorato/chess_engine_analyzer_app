@@ -61,7 +61,15 @@ export function renderEvalChart(onPointClick) {
   const ctx = document.getElementById("evalChart").getContext("2d");
 
   const labels = state.historyMain.map((_, i) => i + 1);
+
+  let lastMateValue = null;
+
   const data = state.historyMain.map((m) => {
+    if (m.eval_mate != null) {
+      lastMateValue = m.eval_mate > 0 ? 10 : -10;
+      return lastMateValue;
+    }
+    if (lastMateValue !== null) return lastMateValue;
     const val = m.eval ?? 0;
     return Math.max(-10, Math.min(10, val));
   });

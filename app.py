@@ -315,8 +315,8 @@ def extract_top_moves(info_list: List[Any], board: chess.Board) -> List[Dict[str
         if "pv" not in entry or not entry["pv"]:
             continue
             
-        move = entry["pv"][0]
-        score = entry["score"].white()
+        move: chess.Move = entry["pv"][0]
+        score: chess.engine.Score = entry["score"].white()
 
         uci_str = move.uci()
 
@@ -327,7 +327,7 @@ def extract_top_moves(info_list: List[Any], board: chess.Board) -> List[Dict[str
             continuation_san.append(temp_board.san(pv_move))
             temp_board.push(pv_move)
 
-        cp = 0.0
+        cp = 0
         if score.is_mate():
             mate_moves = score.mate()
             moves.append({
@@ -335,15 +335,15 @@ def extract_top_moves(info_list: List[Any], board: chess.Board) -> List[Dict[str
                 "san": board.san(move),
                 "from": uci_str[:2],
                 "to": uci_str[2:4],
-                "score": None,  # niente cp
-                "mate": mate_moves,  # <-- QUESTO è il dato vero
+                "score": None,
+                "mate": mate_moves,
                 "continuation": " ".join(continuation_san)
             })
             continue
         else:
             engine_score = score.score()
             if engine_score is not None:
-                cp = engine_score / 100.0
+                cp = engine_score // 100
 
         moves.append({
             "uci": uci_str,
