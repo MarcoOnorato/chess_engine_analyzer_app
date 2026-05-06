@@ -64,6 +64,24 @@ export function renderEvalChart(onPointClick) {
   let lastMateValue = null;
 
   const data = state.historyMain.map((m) => {
+
+    if (m.san && m.san.includes("#")) {
+      // if eval_mate exists
+      if (m.eval_mate != null) {
+        lastMateValue = m.eval_mate > 0 ? 10 : -10;
+        return lastMateValue;
+      }
+  
+      // fallback on eval
+      if (m.eval != null) {
+        lastMateValue = m.eval > 0 ? 10 : -10;
+        return lastMateValue;
+      }
+      
+      // fallback on last value
+      return lastMateValue !== null ? lastMateValue : 10;
+    }
+  
     // If is mate line then update carry value
     if (m.eval_mate != null) {
       lastMateValue = m.eval_mate > 0 ? 10 : -10;
