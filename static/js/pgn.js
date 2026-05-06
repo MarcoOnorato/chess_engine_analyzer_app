@@ -73,9 +73,11 @@ export async function loadPgn(directPgn = null) {
   // --- Player names ---
   const whiteMatch = txt.match(/\[White\s+"([^"]+)"\]/);
   const blackMatch = txt.match(/\[Black\s+"([^"]+)"\]/);
+  const resultMatch = txt.match(/\[Result\s+"([^"]+)"\]/);
 
   state.whitePlayer = (whiteMatch && whiteMatch[1] !== "?") ? whiteMatch[1] : "";
   state.blackPlayer = (blackMatch && blackMatch[1] !== "?") ? blackMatch[1] : "";
+  state.gameResult = resultMatch ? resultMatch[1] : "";
 
   // Always reset
   state.playersPrefix = "";
@@ -157,10 +159,12 @@ export async function loadPgn(directPgn = null) {
 
     // Update opening name after loading
     const displayEl = document.getElementById("openingName");
-    let finalDisplay = (state.currentOpeningName === "Starting Position" || state.currentOpeningName === "Custom Position") 
-                       ? "Custom Position" 
-                       : state.currentOpeningName;
-    if (displayEl) displayEl.textContent = state.playersPrefix + finalDisplay;
+    let finalDisplay = (state.currentOpeningName === "Starting Position" || state.currentOpeningName === "Custom Position") ? "Custom Position" : state.currentOpeningName;
+    let resultSuffix = state.gameResult ? ` — ${state.gameResult}` : "";
+
+    if (displayEl) {
+      displayEl.textContent = state.playersPrefix + resultSuffix + finalDisplay;
+    }
 
     overlay.classList.add("hidden");
     collapseLoadPanel();
