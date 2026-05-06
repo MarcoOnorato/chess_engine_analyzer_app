@@ -84,4 +84,10 @@ export function bindOpenings() {
 
   document.getElementById("closeOpenings").onclick = () =>
     modal.classList.add("hidden");
+
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) {
+      modal.classList.add("hidden");
+    }
+  });
 }
