@@ -37,6 +37,12 @@ export function bindChessCom() {
     }
   });
 
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) {
+      modal.classList.add("hidden");
+    }
+  });
+
   document.getElementById("ccFetchBtn").onclick = async () => {
     const username = document.getElementById("ccUsername").value.trim();
     const year = document.getElementById("ccYear").value;

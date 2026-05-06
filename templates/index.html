@@ -80,8 +80,8 @@
       
       <!-- Labels -->
       <div style="display: flex; justify-content: space-between; margin-bottom: 6px; padding-right: 2px;">
-        <div style="font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.5px; color: #888; font-weight: 600;">Position</div>
-        <div style="font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.5px; color: #888; font-weight: 600;">Depth</div>
+        <div style="font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.5px; color: #8adeff; font-weight: 600;">Position</div>
+        <div style="font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.5px; color: #8adeff; font-weight: 600;">Depth</div>
       </div>
 
       <!-- Slider & Engine Depth Flex Container -->
@@ -101,16 +101,16 @@
 
       <!-- Navigation controls -->
       <div class="control-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;">
-        <button id="pgnPrev" style="cursor: pointer;">Prev</button>
-        <button id="pgnNext" style="cursor: pointer;">Next</button>
-        <button id="flipBtn" style="cursor: pointer;">⇅ Turn</button>
-        <button id="resetBtn" style="border-color: #e6912c; color: #e6912c; font-weight: bold; cursor: pointer;">↺ Reset</button>
+        <button id="pgnPrev" style="cursor: pointer; font-weight: bold; background-color: #02050c; ">Prev</button>
+        <button id="pgnNext" style="cursor: pointer; font-weight: bold; background-color: #02050c; ">Next</button>
+        <button id="flipBtn" style="cursor: pointer; font-weight: bold; background-color: #02050c; ">⇅ Turn</button>
+        <button id="resetBtn" style="border-color: #e6912c; color: #e6912c; font-weight: bold; cursor: pointer; background-color: #02050c; ">↺ Reset</button>
       </div>
     </div>
 
     <!-- PGN Modal -->
-    <div id="pgnModal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.6); align-items: center; justify-content: center;">
-      <div style="background: #2a2a2a; padding: 20px; border-radius: 8px; width: 90%; max-width: 450px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+    <div id="pgnModal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: #02050c; align-items: center; justify-content: center;">
+      <div style="background: #02050c; padding: 20px; border-radius: 8px; width: 90%; max-width: 450px; box-shadow: 0 4px 15px #02050c;">
         <h3 style="color: white; margin-top: 0; margin-bottom: 12px; font-family: sans-serif; font-size: 1.1em; font-weight: 500;">Load PGN</h3>
         <textarea id="pgnInput" rows="4" placeholder="Paste PGN here (e.g., 1. e4 e5 2. Nf3...)" style="width: 100%; box-sizing: border-box; background: #1e1e1e; color: #eee; border: 1px solid #444; padding: 10px; border-radius: 4px; resize: vertical; font-family: monospace; outline: none; margin-bottom: 15px;"></textarea>
         <div style="display: flex; justify-content: flex-end; gap: 10px;">
@@ -194,7 +194,7 @@
       <input type="text" id="ccUsername" class="search-input" placeholder="Username" style="flex: 2;">
       <input type="number" id="ccYear" class="search-input" placeholder="YYYY" style="flex: 1;" min="2000" max="2030">
       <input type="number" id="ccMonth" class="search-input" placeholder="MM" style="flex: 1;" min="1" max="12">
-      <button id="ccFetchBtn" style="background: #26bbff; border-color: #26bbff; font-weight: bold;">Search</button>
+      <button id="ccFetchBtn" style="background: #2d7191; border: none; color: white; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold;">Search</button>
     </div>
     <div id="ccGamesList" style="padding: 10px 25px 25px; overflow-y: auto; max-height: 400px;">
       <div style="color: #888; text-align: center; margin-top: 20px;">Enter a username to fetch games.</div>
@@ -212,7 +212,7 @@
     <div class="search-container" style="display: flex; gap: 10px;">
       <input type="text" id="liUsername" class="search-input" placeholder="Lichess Username" style="flex: 3;">
       <input type="number" id="liCount" class="search-input" placeholder="How many games?" value="10" style="flex: 1;">
-      <button id="liFetchBtn" style="background: #f1c40f; color: black; border-color: #f1c40f; font-weight: bold;">Search</button>
+      <button id="liFetchBtn" style="background: #2d7191; border: none; color: white; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold;">Search</button>
     </div>
     <div id="liGamesList" style="padding: 10px 25px 25px; overflow-y: auto; max-height: 400px;">
       <div style="color: #888; text-align: center; margin-top: 20px;">Enter username to fetch recent games.</div>

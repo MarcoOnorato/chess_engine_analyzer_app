@@ -32,6 +32,12 @@ export function bindPgnLoader() {
   const submitPgnBtn = document.getElementById("submitPgnBtn");
   const pgnInput = document.getElementById("pgnInput");
 
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) {
+      modal.classList.add("hidden");
+    }
+  });
+
   window.loadAndAnalyze = async (pgnString) => {
     const success = await loadPgn(pgnString);
     if (success) {
@@ -40,7 +46,7 @@ export function bindPgnLoader() {
     }
   };
 
-  openModalBtn.onclick = () => { modal.style.display = "flex"; pgnInput.focus(); };
+  openModalBtn.onclick = () => { modal.style.display = "flex"; modal.style.backgroundColor = "#101c38"; pgnInput.focus(); };
   closeModalBtn.onclick = () => { modal.style.display = "none"; };
 
   submitPgnBtn.onclick = () => window.loadAndAnalyze();

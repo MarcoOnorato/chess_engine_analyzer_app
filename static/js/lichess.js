@@ -28,6 +28,12 @@ export function bindLichess() {
           fetchBtn.click();
         }
       });
+
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) {
+        modal.classList.add("hidden");
+      }
+    });
   
     document.getElementById("liFetchBtn").onclick = async () => {
       const username = document.getElementById("liUsername").value.trim();
