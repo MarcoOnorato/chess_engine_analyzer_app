@@ -310,7 +310,7 @@ def get_best_opening_name(fen: str) -> str:
 
 
 def extract_top_moves(info_list: List[Any], board: chess.Board) -> List[Dict[str, Any]]:
-    moves = []
+    moves: List[Dict[str, Any]] = []
     for entry in info_list:
         if "pv" not in entry or not entry["pv"]:
             continue
@@ -327,7 +327,7 @@ def extract_top_moves(info_list: List[Any], board: chess.Board) -> List[Dict[str
             continuation_san.append(temp_board.san(pv_move))
             temp_board.push(pv_move)
 
-        cp = 0
+        cp = 0.0
         if score.is_mate():
             mate_moves = score.mate()
             moves.append({
@@ -343,7 +343,7 @@ def extract_top_moves(info_list: List[Any], board: chess.Board) -> List[Dict[str
         else:
             engine_score = score.score()
             if engine_score is not None:
-                cp = engine_score // 100
+                cp = engine_score / 100
 
         moves.append({
             "uci": uci_str,
