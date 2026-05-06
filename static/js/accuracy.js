@@ -59,19 +59,31 @@ export function calculateGameAccuracy() {
  */
 export function renderEvalChart(onPointClick) {
   const ctx = document.getElementById("evalChart").getContext("2d");
-
-  const labels = state.historyMain.map((_, i) => i + 1);
+  const labels = state.historyMain.map((_, i) => Math.floor(i / 2) + 1);
 
   let lastMateValue = null;
 
   const data = state.historyMain.map((m) => {
+    // If is mate line then update carry value
     if (m.eval_mate != null) {
       lastMateValue = m.eval_mate > 0 ? 10 : -10;
       return lastMateValue;
     }
-    if (lastMateValue !== null) return lastMateValue;
-    const val = m.eval ?? 0;
-    return Math.max(-10, Math.min(10, val));
+  
+    // If has eval reset carry value
+    if (m.eval !== null && m.eval !== undefined) {
+      lastMateValue = null;
+      const val = m.eval;
+      return Math.max(-10, Math.min(10, val));
+    }
+  
+    // Fallback on carry value
+    if (lastMateValue !== null) {
+      return lastMateValue;
+    }
+  
+    // No data
+    return 0;
   });
 
   if (state.evalChart) state.evalChart.destroy();
@@ -123,7 +135,16 @@ export function renderEvalChart(onPointClick) {
       },
       scales: {
         x: {
-          ticks: { color: "#888" },
+          ticks: {
+            color: "#888",
+            callback: function(value, index) {
+              // mostra solo le mosse del Bianco
+              if (index % 2 === 0) {
+                return Math.floor(index / 2) + 1;
+              }
+              return "";
+            }
+          },
           grid: { color: "rgba(255,255,255,0.05)" },
         },
         y: {

@@ -26,6 +26,7 @@ export const STARTING_FEN =
  * @type {{
  *   whitePlayer: string,
  *   blackPlayer: string,
+ *   gameResult: string,
  *   currentOpeningName: string,
  *   is_moving: boolean,
  *   board: object|null,
@@ -48,6 +49,7 @@ export const STARTING_FEN =
 export const state = {
   whitePlayer: "",
   blackPlayer: "",
+  gameResult: "",
   currentOpeningName: "Starting Position",
   is_moving: false,
   board: null,
