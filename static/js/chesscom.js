@@ -25,6 +25,9 @@ export function bindChessCom() {
       document.getElementById("ccMonth").value = now.getMonth() + 1;
     }
     modal.classList.remove("hidden");
+    usernameInput.focus();
+    usernameInput.click();
+    usernameInput.setSelectionRange(0, usernameInput.value.length);
   };
 
   document.getElementById("closeChessCom").onclick = () =>

@@ -6,6 +6,10 @@
  *   - Wiring DOM event handlers from each module (navigation, openings, etc).
  *   - Kicking off an initial analysis of the starting position.
  *
+ * The game-tree model lives in `state.js`. Every module reads/mutates
+ * `state.root` / `state.currentNode` instead of the old flat
+ * `historyMain` / `historyVariations` arrays.
+ *
  * Everything below `window.load` runs exactly once when the page is ready.
  */
 
@@ -15,13 +19,12 @@ import { analyzeCurrentPosition, renderArrows } from "./analysis.js";
 import { bindNavigation } from "./navigation.js";
 import { bindOpenings } from "./openings.js";
 import { bindChessCom } from "./chesscom.js";
-import { bindLichess } from './lichess.js';
+import { bindLichess } from "./lichess.js";
 import { bindPgnLoader } from "./pgn.js";
 import { bindCollapsible } from "./collapsible.js";
+import { renderHistory } from "./history.js";
 
 window.addEventListener("load", () => {
-  // Build the visual board. We keep the instance on `state.board` so every
-  // module can access it without the import graph forming cycles.
   state.board = Chessboard("board", {
     position: "start",
     draggable: true,
@@ -45,6 +48,7 @@ window.addEventListener("load", () => {
   bindPgnLoader();
   bindCollapsible();
 
-  // Kick off the first analysis pass for the starting position.
+  // Initial render: empty tree, starting position analysis.
+  renderHistory();
   analyzeCurrentPosition();
 });

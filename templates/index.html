@@ -23,7 +23,7 @@
 
   <div class="left-column">
     <div id="openingName" class="opening-display">Starting Position</div>
-    
+
     <div class="board-container">
       <div id="evalBar" class="evalbar">
         <div id="evalFill" class="evalfill"></div>
@@ -43,7 +43,7 @@
           <span id="blackAccuracy">--%</span>
         </div>
       </div>
-    
+
       <div class="chart-container">
         <canvas id="evalChart"></canvas>
       </div>
@@ -57,14 +57,12 @@
 
   <div class="right-column">
     <div id="loadPanel" class="card load-panel">
-      <!-- Header -->
-      <button id="loadPanelToggle" class="load-panel-header" aria-expanded="true" aria-controls="loadPanelBody" 
+      <button id="loadPanelToggle" class="load-panel-header" aria-expanded="true" aria-controls="loadPanelBody"
               style="border-bottom: 1px solid #ddd; width: 100%; display: flex; justify-content: space-between; align-items: center; padding-bottom: 8px;">
         <span class="load-panel-title" style="margin-top: 5px; margin-bottom: 5px;">Load from...</span>
         <span class="load-panel-chevron" aria-hidden="true">▾</span>
       </button>
-    
-      <!-- Load panel -->
+
       <div id="loadPanelBody" class="load-panel-body" style="padding: 15px 12px;">
         <div style="display: flex; gap: 8px; align-items: center; justify-content: center;">
           <button id="openingsBtn" style="flex: 1; height: 40px; font-size: 0.85em; cursor: pointer; display: flex; align-items: center; justify-content: center; border-radius: 4px; border: 1px solid #cccccc; background: #c47f25;">Openings</button>
@@ -77,34 +75,28 @@
 
     <!-- Controls (Slider + Depth + Nav) -->
     <div class="card" style="padding: 15px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">
-      
-      <!-- Labels -->
       <div style="display: flex; justify-content: space-between; margin-bottom: 6px; padding-right: 2px;">
         <div style="font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.5px; color: #8adeff; font-weight: 600;">Position</div>
         <div style="font-size: 0.7em; text-transform: uppercase; letter-spacing: 0.5px; color: #8adeff; font-weight: 600;">Depth</div>
       </div>
 
-      <!-- Slider & Engine Depth Flex Container -->
       <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 15px;">
-        <!-- Slider (4/5 width) -->
         <div style="flex: 4; display: flex; align-items: center; gap: 8px;">
           <span id="sliderMin" style="font-size: 0.75em; color: #aaa; font-weight: 500;">0</span>
           <input type="range" id="moveSlider" min="0" max="0" value="0" style="flex-grow: 1; cursor: pointer; accent-color: #4caf50;">
           <span id="sliderMax" style="font-size: 0.75em; color: #aaa; font-weight: 500;">0</span>
         </div>
-        
-        <!-- Engine Depth (1/5 width) -->
+
         <div style="flex: 1; display: flex; justify-content: flex-end;">
           <input type="number" id="depth" value="11" min="8" max="30" style="width: 100%; max-width: 55px; padding: 6px; border: 1px solid #ddd; border-radius: 4px; text-align: center; font-size: 0.9em; outline: none; color: #333; background: #fdfdfd;" />
         </div>
       </div>
 
-      <!-- Navigation controls -->
       <div class="control-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;">
-        <button id="pgnPrev" style="cursor: pointer; font-weight: bold; background-color: #02050c; ">Prev</button>
-        <button id="pgnNext" style="cursor: pointer; font-weight: bold; background-color: #02050c; ">Next</button>
-        <button id="flipBtn" style="cursor: pointer; font-weight: bold; background-color: #02050c; ">⇅ Turn</button>
-        <button id="resetBtn" style="border-color: #e6912c; color: #e6912c; font-weight: bold; cursor: pointer; background-color: #02050c; ">↺ Reset</button>
+        <button id="pgnPrev" style="cursor: pointer; font-weight: bold; background-color: #02050c;">Prev</button>
+        <button id="pgnNext" style="cursor: pointer; font-weight: bold; background-color: #02050c;">Next</button>
+        <button id="flipBtn" style="cursor: pointer; font-weight: bold; background-color: #02050c;">⇅ Turn</button>
+        <button id="resetBtn" style="border-color: #e6912c; color: #e6912c; font-weight: bold; cursor: pointer; background-color: #02050c;">↺ Reset</button>
       </div>
     </div>
 
@@ -120,48 +112,41 @@
       </div>
     </div>
 
+    <!-- Game Tree -->
     <div class="card history-panel">
-      <div class="history-columns">
-
-        <div class="history-section">
-          <h3>📜 Main Line <span id="pgnPos" style="float:right; font-size:0.8em;">0 / 0</span></h3>
-          <div id="historyMain" class="history-table"></div>
+      <div class="game-tree-header">
+        <h3>📜 Game <span id="pgnPos" style="float:right; font-size:0.8em;">0 / 0</span></h3>
+        <div class="tree-actions">
+          <button id="promoteBtn" title="Promote variation to main line" disabled>⤴ Promote var</button>
+          <button id="deleteVarBtn" title="Delete current variation" disabled>🗑 Delete var</button>
+          <button id="undoBtn" title="Undo last move on current line" style="display: none;">⬅ Undo</button>
         </div>
-
-        <div class="history-section">
-          <h3>🧪 Deviation</h3>
-          <div id="historyVariations" class="history-table"></div>
-          <button id="undoBtn" style="margin-top:15px; align-self:flex-start; display:flex;">
-            ⬅ Undo Last Deviation Move
-          </button>
-        </div>
-
       </div>
-
+      <div id="gameTree" class="game-tree"></div>
     </div>
 
     <div class="card">
       <div class="analysis-container">
-    
+
         <div class="analysis-header">
           <div id="classificationCard" class="classification-box">
             <div id="classSymbol" class="class-symbol">–</div>
             <div id="classLabel" class="class-label">Waiting</div>
           </div>
-    
+
           <div style="flex-grow: 1; margin-left: 15px;">
             <h3 style="color: #e6912c;">🔙 Best Alternatives</h3>
             <ul id="altMoves" class="moves-list"></ul>
           </div>
         </div>
-    
+
         <div class="analysis-header">
           <div style="flex-grow: 1;">
             <h3 style="color: #26bbff;">🔝 Next Best Moves</h3>
             <ul id="topMoves" class="moves-list"></ul>
           </div>
         </div>
-    
+
       </div>
     </div>
 
@@ -178,8 +163,7 @@
     <div class="search-container">
       <input type="text" id="openingSearch" class="search-input" placeholder="Search for an opening...">
     </div>
-    <div id="openingsList">
-    </div>
+    <div id="openingsList"></div>
   </div>
 </div>
 
@@ -229,7 +213,6 @@
   </div>
 </div>
 
-<!-- ES module entry point. All other JS files are imported from main.js. -->
 <script type="module" src="static/js/main.js"></script>
 </body>
 </html>

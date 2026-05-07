@@ -528,16 +528,124 @@ def legal_moves() -> Response:
         "is_game_over": board.is_game_over(),
     })
 
+def _serialize_pgn_node(
+    pgn_node: chess.pgn.GameNode,
+    parent_board: chess.Board,
+) -> Dict[str, Any]:
+    """
+    Recursively serializes a python-chess `GameNode` into the JSON tree shape
+    consumed by the frontend.
+
+    The frontend's tree model is:
+        Node {
+            san, uci, fenBefore, fenAfter, comment, nags,
+            children: [Node, ...]   // children[0] is the main line
+        }
+
+    `pgn_node` here is a non-root node — it has a `move` and a `parent`.
+    `parent_board` is a chess.Board representing the position *before* this
+    node's move (== the parent node's `fenAfter`). We never mutate it; we
+    derive a child board with `parent_board.copy()` + push.
+
+    NAGs are emitted as a list of integers (the standard PGN $-codes); the
+    frontend can either ignore them or render them as glyphs (!?, ?, !!, …).
+
+    Args:
+        pgn_node: The current node (must have a `move`).
+        parent_board: Position before `pgn_node.move`.
+
+    Returns:
+        Dict[str, Any]: The serialized subtree.
+    """
+    move = pgn_node.move
+    assert move is not None
+    san = parent_board.san(move)
+    uci = move.uci()
+
+    fen_before = parent_board.fen()
+    child_board = parent_board.copy(stack=False)
+    child_board.push(move)
+    fen_after = child_board.fen()
+
+    # python-chess exposes `pgn_node.variations`: variations[0] is the main
+    # continuation, variations[1:] are sidelines. We mirror that order in
+    # `children`, so children[0] is the continuation chosen as main line.
+    children: List[Dict[str, Any]] = [
+        _serialize_pgn_node(child, child_board)
+        for child in pgn_node.variations
+    ]
+
+    return {
+        "san": san,
+        "uci": uci,
+        "fenBefore": fen_before,
+        "fenAfter": fen_after,
+        "comment": pgn_node.comment or "",
+        "nags": sorted(pgn_node.nags),
+        "children": children,
+    }
+
+
+def _flatten_main_line(
+    game: chess.pgn.Game,
+) -> Tuple[List[Dict[str, str]], List[str]]:
+    """
+    Returns the main-line moves and FENs as the legacy flat lists used by
+    older frontends. Kept for backwards compatibility — new frontends should
+    use the `tree` field instead.
+
+    Returns:
+        Tuple of (moves, fens) where:
+            - moves[i] = {"uci": ..., "san": ...} for the i-th main-line ply
+            - fens[i]  = FEN before moves[i]; fens[-1] = FEN after the last move
+    """
+    board = game.board()
+    moves: List[Dict[str, str]] = []
+    fens: List[str] = [board.fen()]
+
+    for mv in game.mainline_moves():
+        moves.append({"uci": mv.uci(), "san": board.san(mv)})
+        board.push(mv)
+        fens.append(board.fen())
+
+    return moves, fens
+
+
 @app.route("/api/load_pgn", methods=["POST"])
 def load_pgn() -> ResponseReturnValue:
     """
-    Loads and parses a PGN string into individual moves and FEN states.
+    Loads and parses a PGN string into a game tree, including any sidelines
+    (variations) the source PGN contains.
 
     Expected JSON Body:
         pgn (str): The raw PGN text.
 
     Returns:
-        ResponseReturnValue: JSON payload with moves, FEN history, and game headers and eventual error code.
+        ResponseReturnValue: JSON payload with the following shape:
+
+        {
+            "start_fen": str,                  // FEN before move 1 (root.fenAfter)
+            "headers":   { ... PGN headers },
+            "tree": {                          // root of the game tree
+                "fenAfter": <start_fen>,
+                "comment":  str,               // game start comment, if any
+                "children": [Node, ...]        // children[0] = main-line move 1
+            },
+            // --- Legacy fields (main line only) ---
+            "moves": [{uci, san}, ...],
+            "fens":  [fen_before_move_1, ..., fen_after_last_move],
+        }
+
+        Each Node (recursively):
+        {
+            "san":       str,
+            "uci":       str,
+            "fenBefore": str,
+            "fenAfter":  str,
+            "comment":   str,
+            "nags":      [int, ...],
+            "children":  [Node, ...]
+        }
     """
     data: Dict[str, Any] = request.get_json(force=True)
     pgn_text: str = data.get("pgn", "").strip()
@@ -551,32 +659,34 @@ def load_pgn() -> ResponseReturnValue:
         if game is None:
             return jsonify({"error": "Invalid PGN"}), 400
 
-        board = game.board()
-        moves = []
-        fens = [board.fen()]
+        # Build the tree.
+        root_board = game.board()
+        tree_children: List[Dict[str, Any]] = [
+            _serialize_pgn_node(child, root_board)
+            for child in game.variations
+        ]
+        tree: Dict[str, Any] = {
+            "san":       None,
+            "uci":       None,
+            "fenBefore": root_board.fen(),
+            "fenAfter":  root_board.fen(),
+            "comment":   game.comment or "",
+            "nags":      [],
+            "children":  tree_children,
+        }
 
-        found_moves = False
+        # Backwards-compatible flat main-line representation.
+        moves, fens = _flatten_main_line(game)
 
-        for mv in game.mainline_moves():
-            found_moves = True
-
-            san = board.san(mv)  # può fallire
-            moves.append({
-                "uci": mv.uci(),
-                "san": san,
-            })
-
-            board.push(mv)
-            fens.append(board.fen())
-
-        if not found_moves:
+        if not moves and not tree_children:
             return jsonify({"error": "No valid moves found in PGN"}), 400
 
         return jsonify({
-            "start_fen": game.board().fen(),
-            "moves": moves,
-            "fens": fens,
-            "headers": dict(game.headers),
+            "start_fen": root_board.fen(),
+            "headers":   dict(game.headers),
+            "tree":      tree,
+            "moves":     moves,
+            "fens":      fens,
         })
 
     except Exception as e:

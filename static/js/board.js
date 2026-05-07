@@ -6,24 +6,28 @@
  *   1. Validate the move with a placeholder "queen" promotion.
  *   2. If legal, ask the user which piece they want via the modal, then
  *      replay the move with the chosen piece.
+ *
+ * Tree-model note: there is no longer a "deviation tip" guard. Dragging a
+ * piece is always allowed; if the move differs from any existing child of
+ * the current node, a new variation is appended automatically. If it
+ * matches an existing child, we descend into that child (auto-merge,
+ * see `pushMove` in moves.js).
  */
 
 import { state } from "./state.js";
 import { api, fenToPos } from "./api.js";
-import { pushMove, isAtDeviationTip } from "./moves.js";
+import { pushMove } from "./moves.js";
 
 /**
  * Chessboard.js `onDrop` callback. Returning the string "snapback" tells the
- * board to revert the visual move; returning anything else accepts it (the
- * actual state update happens in `pushMove`).
+ * board to revert the visual move; returning anything else accepts it.
  *
  * @param {string} source - Origin square.
  * @param {string} target - Destination square.
- * @param {string} piece - Piece code (e.g. "wP").
+ * @param {string} piece  - Piece code (e.g. "wP").
  * @returns {string|undefined} "snapback" to cancel.
  */
 export function onDrop(source, target, piece) {
-  if (state.in_deviation && !isAtDeviationTip()) return "snapback";
   if (source === target) return "snapback";
 
   const isPromotion =
@@ -32,16 +36,15 @@ export function onDrop(source, target, piece) {
 
   if (isPromotion) {
     handlePromotion(source, target, piece === "wP" ? "white" : "black");
-    // Snap back instantly; we'll redraw correctly after the user picks a piece.
-    return "snapback";
+    return "snapback"; // we'll redraw correctly after the user picks a piece
   }
   handleNormalMove(source, target);
 }
 
 /**
- * Chessboard.js `onSnapEnd` callback. After the snap-back animation
- * completes we resync the visual board with our authoritative FEN — this
- * fixes pieces that look "stuck" after invalid drops or promotion flows.
+ * Chessboard.js `onSnapEnd` callback. Resyncs the visual board with the
+ * authoritative FEN after each animation, fixing pieces that look "stuck"
+ * after invalid drops or promotion flows.
  */
 export function onSnapEnd() {
   state.board.position(fenToPos(state.game_fen));
@@ -50,19 +53,14 @@ export function onSnapEnd() {
 /**
  * Validates and commits a non-promotion move via the backend.
  *
- * @param {string} source - Origin square.
- * @param {string} target - Destination square.
+ * @param {string} source
+ * @param {string} target
  */
 async function handleNormalMove(source, target) {
   if (state.is_moving) {
     state.board.position(fenToPos(state.game_fen));
     return;
   }
-  if (state.in_deviation && !isAtDeviationTip()) {
-    state.board.position(fenToPos(state.game_fen));
-    return;
-  }
-
   state.is_moving = true;
   try {
     const fen_before = state.game_fen;
@@ -72,7 +70,6 @@ async function handleNormalMove(source, target) {
       to: target,
       promotion: "q",
     });
-
     if (!result.legal) {
       state.board.position(fenToPos(state.game_fen));
       return;
@@ -85,18 +82,13 @@ async function handleNormalMove(source, target) {
 
 /**
  * Handles a promotion drop. Validates legality first (avoiding a useless
- * modal on illegal moves), then asks the user for the piece to promote to,
- * then commits the move with that piece.
+ * modal on illegal moves), asks the user which piece, then commits.
  *
- * @param {string} source - Origin square.
- * @param {string} target - Destination square.
- * @param {"white"|"black"} color - Color of the promoting pawn.
+ * @param {string} source
+ * @param {string} target
+ * @param {"white"|"black"} color
  */
 async function handlePromotion(source, target, color) {
-  if (state.in_deviation && !isAtDeviationTip()) {
-    state.board.position(fenToPos(state.game_fen));
-    return;
-  }
   if (state.is_moving) {
     state.board.position(fenToPos(state.game_fen));
     return;
@@ -106,7 +98,6 @@ async function handlePromotion(source, target, color) {
   try {
     const fen_before = state.game_fen;
 
-    // 1. Sanity check: would the move even be legal as a queen promotion?
     const legalityCheck = await api("/api/legal_moves", {
       fen: state.game_fen,
       from: source,
@@ -118,14 +109,12 @@ async function handlePromotion(source, target, color) {
       return;
     }
 
-    // 2. Ask the user which piece.
     const choice = await askPromotion(color);
     if (!choice) {
       state.board.position(fenToPos(state.game_fen));
       return;
     }
 
-    // 3. Final commit with the chosen piece.
     const result = await api("/api/legal_moves", {
       fen: state.game_fen,
       from: source,
@@ -140,9 +129,9 @@ async function handlePromotion(source, target, color) {
 
 /**
  * Shows the promotion modal and resolves to the user's chosen piece code,
- * or null if they cancel (button or Escape key).
+ * or null if they cancel.
  *
- * @param {"white"|"black"} color - Color of the promoting pawn.
+ * @param {"white"|"black"} color
  * @returns {Promise<"q"|"r"|"b"|"n"|null>}
  */
 function askPromotion(color) {

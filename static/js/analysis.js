@@ -85,7 +85,6 @@ export function renderMovesList(moves, elementId, isAlternative = false) {
     const li = document.createElement("li");
     let scoreText;
     let pillClass = "pill-neutral";
-    let carryValue = null;
 
     if (m.mate !== null && m.mate !== undefined) {
       scoreText = m.mate > 0 ? `M${m.mate}` : `-M${Math.abs(m.mate)}`;
@@ -339,8 +338,6 @@ export async function analyzeCurrentPosition(
         : "";
     
       let resultSuffix = state.gameResult ? ` — ${state.gameResult}` : "";
-
-      console.log(data)
       let separator = prefix ? " — " : "";
       openingEl.textContent = prefix + resultSuffix + separator + displayName;
     }

@@ -1,15 +1,29 @@
 /**
- * @fileoverview Game navigation: slider, prev/next, flip, reset, undo, and
- * the chart click-to-jump handler.
+ * @fileoverview Game navigation: prev/next, slider, flip, reset, undo, plus
+ * the new variation-promote / variation-delete buttons.
  *
- * `updatePgnNav` is the canonical place to refresh the PGN cursor labels and
+ * "Current line" semantics:
+ *   - Prev   : move cursor to currentNode.parent.
+ *   - Next   : move cursor to currentNode.children[0] (deeper into the
+ *              same continuation we're already on; this matches Lichess).
+ *   - Slider : scrubs along the *main line only*, snapping out of any
+ *              variation. This keeps the slider behaviour predictable.
+ *
+ * `updatePgnNav` is the canonical place to refresh the cursor labels and
  * the slider's bounds — it's called from any module that mutates the cursor.
  */
 
-import { state, STARTING_FEN } from "./state.js";
+import {
+  state,
+  STARTING_FEN,
+  resetTree,
+  mainLineNodes,
+  isOnMainLine,
+} from "./state.js";
 import { fenToPos } from "./api.js";
-import { renderHistory } from "./history.js";
+import { renderHistory, jumpToNode, jumpToMainLineIndex } from "./history.js";
 import { analyzeCurrentPosition } from "./analysis.js";
+import { deleteCurrentNode, promoteCurrentVariation } from "./moves.js";
 
 /** Cached reference to the move slider. Initialized in `bindNavigation`. */
 let moveSlider = null;
@@ -19,105 +33,78 @@ let moveSlider = null;
  * to match the current cursor. Also re-renders the eval chart's highlight.
  */
 export function updatePgnNav() {
-  const total = state.pgn_moves.length;
+  const ml = mainLineNodes();
+  const total = ml.length;
   const pos = document.getElementById("pgnPos");
   const sliderMaxLabel = document.getElementById("sliderMax");
 
+  // The "main-line index" reflected on the slider: 0 = root, N = last main move.
+  const cursor = state.currentNode;
+  const inVar = cursor.parent && !isOnMainLine(cursor);
+  const mainIndex = inVar ? indexOfNearestMainAncestor(cursor) : cursor.ply;
+
   if (moveSlider) {
     moveSlider.max = total;
-    moveSlider.value = state.pgn_index;
+    moveSlider.value = mainIndex;
   }
-  sliderMaxLabel.textContent = total;
+  if (sliderMaxLabel) sliderMaxLabel.textContent = total;
 
-  if (total === 0) {
+  const prevBtn = document.getElementById("pgnPrev");
+  const nextBtn = document.getElementById("pgnNext");
+
+  if (total === 0 && state.currentNode === state.root) {
     pos.textContent = "0 / 0";
-    document.getElementById("pgnPrev").disabled = true;
-    document.getElementById("pgnNext").disabled = true;
-    return;
+    prevBtn.disabled = true;
+    nextBtn.disabled = true;
+  } else {
+    const labelIndex = inVar ? `${cursor.ply}` : `${cursor.ply}`;
+    const suffix = inVar ? " (var)" : "";
+    pos.textContent = `${labelIndex} / ${total}${suffix}`;
+    prevBtn.disabled = !cursor.parent;
+    nextBtn.disabled = cursor.children.length === 0;
   }
 
-  pos.textContent =
-    `${state.pgn_index} / ${total}` + (state.in_deviation ? " (var)" : "");
-  document.getElementById("pgnPrev").disabled = false;
-  document.getElementById("pgnNext").disabled = false;
+  // Promote/Delete only make sense when the cursor is on a variation node.
+  const promoteBtn = document.getElementById("promoteBtn");
+  const deleteBtn = document.getElementById("deleteVarBtn");
+  if (promoteBtn) promoteBtn.disabled = !cursor.parent || isOnMainLine(cursor);
+  if (deleteBtn) deleteBtn.disabled = !cursor.parent || isOnMainLine(cursor);
 
   if (state.evalChart) state.evalChart.update();
 }
 
 /**
- * Forces a return from any deviation to a specific point on the main line.
- * Used by both the chart click handler and the eval-chart factory.
+ * Walks up from `node` until we reach a main-line ancestor and returns
+ * its `ply`. Used by the slider to snap variation positions to the closest
+ * main-line move number.
  *
- * @param {number} index - 0-based ply index in the main line.
+ * @param {import("./state.js").Node} node
+ * @returns {number}
  */
-export function jumpToMainLineFromChart(index) {
-  // Reset deviation state.
-  state.historyVariations = [];
-  state.deviationStartIndex = 0;
-  state.in_deviation = false;
-  state.currentVariationIndex = -1;
-
-  // Move main-line cursor to the target.
-  state.currentMainlineIndex = index + 1;
-  state.pgn_index = index + 1;
-  state.game_fen = state.historyMain[index].fen_after;
-
-  state.board.position(fenToPos(state.game_fen));
-
-  renderHistory();
-  updatePgnNav();
-
-  const prev_fen = state.historyMain[index].fen_before;
-  const last_move_uci = state.historyMain[index].uci;
-  analyzeCurrentPosition(prev_fen, last_move_uci);
+function indexOfNearestMainAncestor(node) {
+  let n = node;
+  while (n && !isOnMainLine(n)) n = n.parent;
+  return n ? n.ply : 0;
 }
 
 /**
- * Steps the cursor one move forward along the main PGN line.
+ * Steps the cursor one move forward along the current line. Following the
+ * Lichess convention, "forward" means children[0] of the current node, so
+ * once you've entered a variation, Next continues *inside* that variation.
  */
 function nextMove() {
-  if (state.pgn_index >= state.pgn_moves.length) return;
-
-  state.pgn_index++;
-  state.currentMainlineIndex = state.pgn_index;
-  state.in_deviation = false;
-  state.historyVariations = [];
-  state.currentVariationIndex = -1;
-
-  state.game_fen = state.pgn_fens[state.pgn_index];
-  state.board.position(fenToPos(state.game_fen));
-
-  renderHistory();
-  updatePgnNav();
-
-  const prev_fen = state.pgn_index > 0 ? state.pgn_fens[state.pgn_index - 1] : null;
-  const last_move_uci =
-    state.pgn_index > 0 ? state.pgn_moves[state.pgn_index - 1].uci : null;
-  analyzeCurrentPosition(prev_fen, last_move_uci);
+  const n = state.currentNode;
+  if (n.children.length === 0) return;
+  jumpToNode(n.children[0]);
 }
 
 /**
- * Steps the cursor one move backward along the main PGN line.
+ * Steps the cursor one move backward (to the parent).
  */
 function prevMove() {
-  if (state.pgn_index <= 0) return;
-
-  state.pgn_index--;
-  state.currentMainlineIndex = state.pgn_index;
-  state.in_deviation = false;
-  state.historyVariations = [];
-  state.currentVariationIndex = -1;
-
-  state.game_fen = state.pgn_fens[state.pgn_index];
-  state.board.position(fenToPos(state.game_fen));
-
-  renderHistory();
-  updatePgnNav();
-
-  const prev_fen = state.pgn_index > 0 ? state.pgn_fens[state.pgn_index - 1] : null;
-  const last_move_uci =
-    state.pgn_index > 0 ? state.pgn_moves[state.pgn_index - 1].uci : null;
-  analyzeCurrentPosition(prev_fen, last_move_uci);
+  const n = state.currentNode;
+  if (!n.parent) return;
+  jumpToNode(n.parent);
 }
 
 /**
@@ -125,64 +112,124 @@ function prevMove() {
  * any loaded PGN.
  */
 function resetAll() {
+
+  // reset logic state
+  resetTree(STARTING_FEN);
+
+  // reset cursor
+  state.currentNode = state.root;
   state.game_fen = STARTING_FEN;
-  state.historyMain = [];
-  state.historyVariations = [];
-  state.pgn_index = 0;
-  state.in_deviation = false;
-  state.pgn_moves = [];
-  state.pgn_fens = [];
+
+  // reset board UI
   state.board.position("start");
+
+  // reset input
   document.getElementById("pgnInput").value = "";
+
+  // reset labels UI
+  state.whitePlayer = "";
+  state.blackPlayer = "";
+  state.gameResult = "";
+  state.playersPrefix = "";
+  state.currentOpeningName = "Starting Position";
+
+  const openingEl = document.getElementById("openingName");
+  if (openingEl) {
+    openingEl.textContent = "Starting Position";
+  }
+
+  // rerender
   renderHistory();
   updatePgnNav();
+
+  // reset eval chart
+  if (state.evalChart) {
+    state.evalChart.destroy();
+    state.evalChart = null;
+  }
+
+  // new eval of position
   analyzeCurrentPosition();
 }
 
 /**
- * Pops the most recent move off the deviation stack and re-syncs the board.
- * If the deviation becomes empty, resumes the main line at the deviation
- * start point.
+ * Undoes the last move on whatever line the cursor is on. Equivalent to
+ * "delete current node and step up". If you're on the main line, this
+ * truncates the main line by one ply.
  */
-function undoLastDeviationMove() {
-  if (state.historyVariations.length === 0) return;
+function undoLastMove() {
+  if (!state.currentNode.parent) return;
+  deleteCurrentNode();
+  renderHistory();
+  updatePgnNav();
+  const n = state.currentNode;
+  const prev_fen = n.parent ? n.parent.fenAfter : null;
+  const last_move_uci = n.uci || null;
+  analyzeCurrentPosition(prev_fen, last_move_uci);
+}
 
-  state.historyVariations.pop();
+/**
+ * Promotes the entire ancestry of the current node so it becomes the main
+ * line. After this, isOnMainLine(currentNode) is true.
+ */
+function promoteVariation() {
+  if (!state.currentNode.parent || isOnMainLine(state.currentNode)) return;
+  promoteCurrentVariation();
+  renderHistory();
+  updatePgnNav();
+}
 
-  if (state.historyVariations.length > 0) {
-    const last = state.historyVariations[state.historyVariations.length - 1];
-    state.game_fen = last.fen_after;
-    state.currentVariationIndex = state.historyVariations.length;
-    state.in_deviation = true;
-  } else {
-    state.in_deviation = false;
-    state.currentVariationIndex = -1;
-    state.currentMainlineIndex = state.deviationStartIndex;
-    state.pgn_index = state.deviationStartIndex;
-    state.game_fen =
-      state.deviationStartIndex > 0
-        ? state.historyMain[state.deviationStartIndex - 1].fen_after
-        : state.pgn_fens[0];
+/**
+ * @typedef {import("./state.js").Node} GameNode
+ * @param {GameNode} node
+ * @returns {GameNode}
+ */
+function variationBranchRoot(node) {
+  let n = node;
+
+  while (n.parent) {
+    const parent = n.parent;
+
+    // If this node is NOT the main continuation of parent,
+    // then THIS is the root of the current variation branch.
+    if (parent.children[0] !== n) {
+      return n;
+    }
+
+    n = parent;
   }
 
+  return node;
+}
+
+/**
+ * Deletes the current variation subtree and moves the cursor up to the
+ * parent. No-op on the main line (use Undo for that).
+ */
+function deleteVariation() {
+  const current = state.currentNode;
+
+  if (!current.parent || isOnMainLine(current)) return;
+
+  // Root of the CURRENT variation level
+  const root = variationBranchRoot(current);
+
+  const parent = root.parent;
+  if (!parent) return;
+
+  // Remove only this variation branch
+  parent.children = parent.children.filter((c) => c !== root);
+
+  // Move cursor back to branching point
+  state.currentNode = parent;
+  state.game_fen = parent.fenAfter;
   state.board.position(fenToPos(state.game_fen));
+
   renderHistory();
   updatePgnNav();
 
-  let prev_fen = null;
-  let last_move_uci = null;
-
-  if (state.historyVariations.length > 0) {
-    const last = state.historyVariations[state.historyVariations.length - 1];
-    prev_fen = last.fen_before;
-    last_move_uci = last.uci;
-  } else if (
-    state.in_deviation === false &&
-    state.currentMainlineIndex > 0
-  ) {
-    prev_fen = state.historyMain[state.currentMainlineIndex - 1].fen_before;
-    last_move_uci = state.historyMain[state.currentMainlineIndex - 1].uci;
-  }
+  const prev_fen = parent.parent ? parent.parent.fenAfter : null;
+  const last_move_uci = parent.uci || null;
 
   analyzeCurrentPosition(prev_fen, last_move_uci);
 }
@@ -198,36 +245,32 @@ export function bindNavigation() {
   document.getElementById("pgnPrev").onclick = prevMove;
   document.getElementById("resetBtn").onclick = resetAll;
   document.getElementById("flipBtn").onclick = () => state.board.flip();
-  document.getElementById("undoBtn").onclick = undoLastDeviationMove;
+  document.getElementById("undoBtn").onclick = undoLastMove;
 
-  // Slider: scrub silently while dragging, run analysis once on release.
+  const promoteBtn = document.getElementById("promoteBtn");
+  if (promoteBtn) promoteBtn.onclick = promoteVariation;
+
+  const deleteBtn = document.getElementById("deleteVarBtn");
+  if (deleteBtn) deleteBtn.onclick = deleteVariation;
+
+  // Slider scrubs along the main line. Dragging silently updates the
+  // board; release runs analysis once.
   moveSlider.addEventListener("input", function () {
-    const targetIndex = parseInt(this.value);
-    if (state.pgn_moves.length > 0 && state.pgn_fens.length > targetIndex) {
-      state.pgn_index = targetIndex;
-      state.currentMainlineIndex = targetIndex;
-      state.in_deviation = false;
-      state.historyVariations = [];
-      state.currentVariationIndex = -1;
-      state.game_fen = state.pgn_fens[targetIndex];
-      state.board.position(fenToPos(state.game_fen), false);
-
-      renderHistory();
-      updatePgnNav();
-
-      document.getElementById("topMoves").innerHTML =
-        "<li style='color:#888;'>Sliding...</li>";
-      // No need for renderArrows([]) here — analysis on release will redraw.
-    }
+    const targetIndex = parseInt(this.value, 10);
+    jumpToMainLineIndex(targetIndex);
+    document.getElementById("topMoves").innerHTML =
+      "<li style='color:#888;'>Sliding...</li>";
   });
 
-  moveSlider.addEventListener("change", function () {
-    let prev_fen = null;
-    let last_move_uci = null;
-    if (state.pgn_index > 0) {
-      prev_fen = state.pgn_fens[state.pgn_index - 1];
-      last_move_uci = state.pgn_moves[state.pgn_index - 1].uci;
+  // Keyboard shortcuts: ←/→ for prev/next.
+  document.addEventListener("keydown", (e) => {
+    if (e.target.matches("input, textarea")) return;
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      prevMove();
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      nextMove();
     }
-    analyzeCurrentPosition(prev_fen, last_move_uci);
   });
 }
