@@ -396,7 +396,7 @@ export function jumpToMainLineIndex(index) {
 /**
  * Helper: autoscroll history section to match eval chart selection
  */
-function scrollHistoryToCurrentMove() {
+export function scrollHistoryToCurrentMove() {
   const container = document.getElementById("gameTree");
   if (!container) return;
 

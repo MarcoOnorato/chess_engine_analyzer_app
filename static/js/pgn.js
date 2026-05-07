@@ -28,7 +28,7 @@
 
 import { state, resetTree, indexNode, nextNodeId, mainLineNodes } from "./state.js";
 import { api, fenToPos } from "./api.js";
-import { renderHistory, jumpToMainLineIndex } from "./history.js";
+import { renderHistory, jumpToMainLineIndex, scrollHistoryToCurrentMove } from "./history.js";
 import { updatePgnNav } from "./navigation.js";
 import { analyzeCurrentPosition } from "./analysis.js";
 import { calculateGameAccuracy, renderEvalChart } from "./accuracy.js";
@@ -151,6 +151,7 @@ export async function loadPgn(directPgn = null) {
     updatePgnNav();
     calculateGameAccuracy();
     renderEvalChart((mainIndex) => jumpToMainLineIndex(mainIndex + 1));
+    scrollHistoryToCurrentMove();
 
     const prev_fen = mainLineTip.parent ? mainLineTip.parent.fenAfter : null;
     const last_move_uci = mainLineTip.uci || null;
