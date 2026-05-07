@@ -113,7 +113,7 @@ h4 { margin: 0; font-size: 0.75em; color: #ebf8ff; }
 #board { width: 100%; flex-grow: 1; }
 
 /* ==========================================================================
-    RIGHT COLUMN (Controls, History, Analysis)
+    RIGHT COLUMN (Controls, Analysis)
     ========================================================================== */
 .right-column {
   flex: 2;
@@ -353,6 +353,169 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 }
 
 /* ==========================================================================
+    GAME TREE
+    ========================================================================== */
+.game-tree-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.game-tree-header h3 {
+  margin: 0;
+  flex-grow: 1;
+}
+
+.tree-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.tree-actions button {
+  font-size: 0.75em;
+  padding: 4px 8px;
+  background: #02050c;
+  border: 1px solid #88c1e2;
+  color: #ebf8ff;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tree-actions button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.tree-actions button:hover:not(:disabled) {
+  background: #0d4f5f75;
+}
+
+/* Tree container */
+.game-tree {
+  background: #02050c;
+  border: 1px solid #02050c;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.95em;
+  line-height: 1.7;
+  overflow-y: auto;
+  max-height: 45vh;
+  min-height: 200px;
+}
+
+.tree-empty {
+  color: #555;
+  font-style: italic;
+}
+
+/* ---------- Main rows ---------- */
+
+.history-row {
+  display: grid;
+  grid-template-columns: 40px 1fr 1fr;
+  padding: 3px 6px;
+  border-radius: 4px;
+  align-items: center;
+}
+
+.history-row:hover {
+  background: rgba(38, 187, 255, 0.04);
+}
+
+.history-row.active-row {
+  background: rgba(38, 187, 255, 0.08);
+}
+
+.move-number {
+  color: #26bbff;
+  font-weight: bold;
+}
+
+.move-cell {
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-weight: 500;
+  transition: background 0.15s ease;
+}
+
+.move-cell.empty {
+  cursor: default;
+}
+
+.move-cell:hover:not(.empty) {
+  background: #0d4f5f75;
+}
+
+.move-cell.active-move.active-main {
+  border: 1px solid #26bbff;
+  background: #02050c;
+  color: #26bbff;
+  font-weight: bold;
+}
+
+.move-cell.active-move.active-var {
+  border: 1px solid #f0c15c;
+  background: #02050c;
+  color: #f0c15c;
+  font-weight: bold;
+}
+
+/* ---------- Variation rows (inline parentheses block) ---------- */
+
+.variation-row {
+  /* Sit between the surrounding main rows. Indent slightly so the parens
+     don't bump against the move-number column. */
+  padding: 2px 6px 2px 14px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 0.88em;
+  line-height: 1.5;
+  color: #9aa7b8;
+}
+
+/* Each variation block — `(...)` */
+.variation {
+  display: inline;
+  color: inherit;
+}
+
+/* Depth tints, so nested branches stay readable. */
+.variation.depth-1 { color: #9aa7b8; }
+.variation.depth-2 { color: #7e8ea3; }
+.variation.depth-3 { color: #6a7a8d; }
+.variation.depth-4 { color: #586879; }
+
+/* Tokens inside variations */
+.move-token.variation-move {
+  cursor: pointer;
+  padding: 0 2px;
+  border-radius: 3px;
+  transition: background 0.15s ease;
+  color: inherit;
+  font-weight: 500;
+}
+
+.move-token.variation-move:hover {
+  background: #0d4f5f75;
+  color: #26bbff;
+}
+
+.move-token.variation-move.active-move.active-var {
+  background: #02050c;
+  border: 1px solid #f0c15c;
+  color: #f0c15c;
+  font-weight: bold;
+  padding: 0 4px;
+}
+
+
+
+/* ==========================================================================
     MODALS (Openings & Promotions)
     ========================================================================== */
 .hidden { display: none !important; }
@@ -407,7 +570,10 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 
 .opening-item:hover { background: #02050c; color: #26bbff; }
 .opening-name { font-weight: bold; }
-.opening-moves { color: #02050c; font-size: 0.85em; }
+.opening-moves {
+  color: #8a99ad;
+  font-size: 0.85em;
+}
 .close-modal { background: none; border: none; color: #fff; font-size: 24px; cursor: pointer; padding: 0; }
 .close-modal:hover { color: #fff; background: none; }
 
@@ -461,6 +627,14 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 #evalChart {
   width: 100% !important;
   height: 100% !important;
+}
+
+#pgnModal {
+  pointer-events: auto;
+}
+
+#pgnModal.hidden {
+  pointer-events: none;
 }
 
 /* ==========================================================================
