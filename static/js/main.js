@@ -48,6 +48,15 @@ window.addEventListener("load", () => {
     renderArrows(state.topMovesCache);
   });
 
+  // Re-render engine arrows after board flip so they follow the new orientation.
+  // We intercept the flip button here (after the board is mounted) rather than
+  // inside navigation.js so the fix is self-contained in the entry point.
+  document.getElementById("flipBtn")?.addEventListener("click", () => {
+    // board.flip() is already called by bindNavigation; we just need to
+    // schedule a re-render *after* the flip animation settles.
+    requestAnimationFrame(() => renderArrows(state.topMovesCache));
+  });
+
   // Wire every UI subsystem.
   bindNavigation();
   bindOpenings();
