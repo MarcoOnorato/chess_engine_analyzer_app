@@ -152,6 +152,7 @@ function buildMainCell(node) {
   }
   cell.textContent = txt;
   if (node.evalData?.color) cell.style.color = node.evalData.color;
+  if (node.evalData?.label === "Brilliant") cell.style.fontWeight = "bold";
 
   if (state.currentNode === node) {
     cell.classList.add("active-move");
@@ -320,6 +321,7 @@ function buildVariationToken(node, depth) {
   }
   span.textContent = txt;
   if (node.evalData?.color) span.style.color = node.evalData.color;
+  if (node.evalData?.label === "Brilliant") span.style.fontWeight = "bold";
 
   if (state.currentNode === node) {
     span.classList.add("active-move", "active-var");

@@ -35,7 +35,6 @@ let moveSlider = null;
 export function updatePgnNav() {
   const ml = mainLineNodes();
   const total = ml.length;
-  const pos = document.getElementById("pgnPos");
   const sliderMaxLabel = document.getElementById("sliderMax");
 
   // The "main-line index" reflected on the slider: 0 = root, N = last main move.
@@ -53,13 +52,11 @@ export function updatePgnNav() {
   const nextBtn = document.getElementById("pgnNext");
 
   if (total === 0 && state.currentNode === state.root) {
-    pos.textContent = "0 / 0";
     prevBtn.disabled = true;
     nextBtn.disabled = true;
   } else {
     const labelIndex = inVar ? `${cursor.ply}` : `${cursor.ply}`;
     const suffix = inVar ? " (var)" : "";
-    pos.textContent = `${labelIndex} / ${total}${suffix}`;
     prevBtn.disabled = !cursor.parent;
     nextBtn.disabled = cursor.children.length === 0;
   }

@@ -206,7 +206,7 @@ def classify_move(score_diff: float, is_sacrifice: bool = False) -> Tuple[str, s
     Returns:
         Tuple[str, str, str]: The label, symbol, and hex color code for the UI.
     """
-    if is_sacrifice and score_diff < 20:
+    if is_sacrifice and score_diff < 20:  # TODO: aggiungere che se sto in linea di matto lo score potrebbe essere None settarlo tipo ad ASSAI per non far tipo da M4 a 10 perchè ho appeso un pezzo e mi dice geniale
         return "Brilliant", "!!", "#15a2b8"
     if score_diff <= 5:
         return "Best", "★", "#26bbff"
@@ -407,8 +407,9 @@ def analyze() -> Response:
 
     if top:
         if top.get("mate") is not None:
-            eval_score = None
-            eval_mate = top["mate"]
+            mate_val = top["mate"]
+            eval_score = 100.0 if mate_val > 0 else -100.0
+            eval_mate = mate_val
         else:
             eval_score = top["score"]
             eval_mate = None
@@ -427,19 +428,63 @@ def analyze() -> Response:
 
             alternative_moves = extract_top_moves(prev_info_list, prev_board)
 
-            best_eval_prev = prev_info_list[0]["score"].relative.score(mate_score=10000)
+            prev_best_score = prev_info_list[0]["score"]
+            curr_score = info_list[0]["score"] if info_list else None
 
-            actual_eval = None
-            if info_list and "score" in info_list[0]:
-                actual_eval_raw = info_list[0]["score"].relative.score(mate_score=10000)
-                if actual_eval_raw is not None:
-                    actual_eval = -actual_eval_raw
+            # If there is a mate line
+            # If the current move is part of the mate line
+            post_board = prev_board.copy(stack=False)
+            post_board.push(last_move)
+            played_is_mate = post_board.is_checkmate()
 
-            raw_loss = float((best_eval_prev or 0) - (actual_eval or 0))
-            diff = max(0.0, raw_loss)
+            # If prev move was in the mate line
+            prev_best_is_mate = prev_best_score.relative.is_mate()
 
-            is_sac = is_real_sacrifice(prev_board, last_move)
-            label, symbol, color = classify_move(diff, is_sac)
+            # If current move is still a mate line
+            curr_is_mate = (curr_score is not None and curr_score.relative.is_mate())
+
+            played_san = prev_board.san(last_move)
+
+            # Checkmate is always the best move
+            if played_is_mate:
+                label, symbol, color = "Best", "★", "#26bbff"
+                diff = 0.0
+
+                # Assegna il matto in modo assoluto: +1 se vince il Bianco, -1 se vince il Nero
+                eval_mate = 1 if prev_board.turn == chess.WHITE else -1
+                eval_score = 100.0 if eval_mate > 0 else -100.0
+
+            # If SAN explicitly ends in mate (#)
+            elif prev_best_is_mate and played_san.endswith("#"):
+                # Usa .white() invece di .relative() per mantenere il segno corretto
+                mate_val = prev_best_score.white().mate()
+
+                eval_mate = mate_val
+                eval_score = 100.0 if (mate_val or 0) > 0 else -100.0
+
+            # If current move is a mate line but longer it will never be error or blunder
+            elif curr_is_mate and prev_best_is_mate:
+                prev_mate_dist = abs(prev_best_score.relative.mate() or 0)
+                curr_mate_dist = abs(curr_score.relative.mate() or 0)  # type: ignore
+                mate_delay = max(0, curr_mate_dist - prev_mate_dist)
+                diff = min(mate_delay * 30.0, 149.0)
+
+                is_sac = is_real_sacrifice(prev_board, last_move)
+                label, symbol, color = classify_move(diff, is_sac)
+            else:
+                # Normal line
+                MATE_CP = 10000
+                best_eval_prev = prev_best_score.relative.score(mate_score=MATE_CP) or 0
+                if curr_score is not None:
+                    actual_eval_raw = curr_score.relative.score(mate_score=MATE_CP)
+                    actual_eval = -(actual_eval_raw or 0)
+                else:
+                    actual_eval = 0
+
+                raw_loss = float(best_eval_prev - actual_eval)
+                diff = max(0.0, raw_loss)
+                is_sac = is_real_sacrifice(prev_board, last_move)
+                label, symbol, color = classify_move(diff, is_sac)
 
             classification = {
                 "label": label,
