@@ -777,25 +777,6 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   margin: 0 auto;
 }
 
-.training-board-col { flex: 0 0 450px; }
-
-/* Il pannello History */
-.training-history-col {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  background: #101c38;
-  border-radius: 8px;
-  border: 1px solid #1a2a47;
-}
-
-.training-history-panel {
-  flex: 1;
-  overflow-y: auto;
-  padding: 10px;
-  font-family: monospace;
-}
-
 .history-move-row {
   display: flex;
   border-bottom: 1px solid #1a2a47;
@@ -817,14 +798,6 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   background: #26bbff;
   color: #02050c !important;
   font-weight: bold;
-}
-
-.training-nav-steps {
-  display: flex;
-  justify-content: center;
-  gap: 5px;
-  padding: 10px;
-  background: rgba(0,0,0,0.2);
 }
 
 .nav-btn {
@@ -1062,14 +1035,6 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   padding: 16px;
 }
 
-.training-playing {
-  display: grid;
-  grid-template-columns: minmax(520px, 70vh) minmax(320px, 420px);
-  gap: 28px;
-  align-items: start;
-  justify-content: center;
-}
-
 .training-evalfill {
   background: white;
   width: 100%;
@@ -1250,4 +1215,254 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
   .training-playing { grid-template-columns: 1fr; }
   .training-stats-grid { grid-template-columns: repeat(2, 1fr); }
   .training-header-spacer { display: none; }
+}
+
+
+/* ==========================================================================
+   TRAINING PLAYING SCREEN — two-column layout matching main review UI
+   ========================================================================== */
+
+/* Outer two-column grid */
+.tplay-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 70vh) minmax(280px, 380px);
+  gap: 24px;
+  align-items: start;
+  justify-content: center;
+  padding: 16px 24px;
+  height: 100%;
+  box-sizing: border-box;
+}
+ 
+/* ---- Left column ---- */
+.tplay-board-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+ 
+/* Scenario badge above the board */
+.tplay-scenario-badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.tplay-badge-num {
+  background: #2d7191;
+  color: #fff;
+  border-radius: 4px;
+  padding: 3px 10px;
+  font-size: 0.78em;
+  font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.tplay-badge-reason {
+  color: #8adeff;
+  font-size: 0.88em;
+  font-weight: 600;
+}
+ 
+/* Board + eval-bar wrapper (mirrors main .board-container) */
+.tplay-board-wrap {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  width: 100%;
+}
+ 
+/* The chessboard host div */
+.tplay-board {
+  flex: 1;
+  min-width: 0;
+}
+ 
+/* chessboard.js overrides inside training board */
+#trainingBoard .board-b72b1 {
+  width: 100% !important;
+}
+ 
+/* Nav row below the board */
+.tplay-nav-row {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+.tplay-nav-btn {
+  background: #02050c;
+  border: 1px solid #88c1e2;
+  color: #ebf8ff;
+  padding: 6px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1.1em;
+  font-weight: 700;
+  transition: background 0.15s;
+}
+.tplay-nav-btn:hover {
+  background: #101c38;
+  border-color: #26bbff;
+  color: #26bbff;
+}
+ 
+/* ---- Right column ---- */
+.tplay-side-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+ 
+/* Move history card */
+.tplay-history-card {
+  padding: 12px 14px;
+}
+.tplay-history-label {
+  font-size: 0.72em;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #8adeff;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.tplay-history-scroll {
+  overflow-y: auto;
+  max-height: 36vh;
+  font-size: 0.93em;
+  line-height: 1.7;
+}
+.tplay-no-moves {
+  color: #555;
+  font-style: italic;
+  font-size: 0.9em;
+  padding: 8px 0;
+}
+ 
+/* Move rows (reuse existing .history-row + .move-number grid) */
+.tplay-move-cell {
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 4px;
+  transition: background 0.12s;
+}
+.tplay-move-cell:hover {
+  background: #0d4f5f75;
+  color: #8adeff;
+}
+.tplay-move-cell.tplay-move-context {
+  color: #556070;       /* muted: these are "already played" context moves */
+}
+.tplay-move-cell.active-main {
+  border: 1px solid #26bbff;
+  background: #02050c;
+  color: #26bbff;
+  font-weight: bold;
+}
+ 
+/* Status card */
+.tplay-status-card {
+  padding: 12px 14px;
+}
+.tplay-status-label {
+  font-size: 0.72em;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #8adeff;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+ 
+/* Reuse / override the existing .training-status-box tones */
+.training-status-box {
+  background: #101c38;
+  border: 1px solid #1a2a47;
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 0.93em;
+  line-height: 1.5;
+  min-height: 60px;
+}
+.training-status-box.tone-info    { border-color: #1a2a47; background: #101c38; }
+.training-status-box.tone-success { border-color: #69923e; background: #122718; color: #a8e6a3; }
+.training-status-box.tone-warning { border-color: #f0c15c; background: #2a2517; color: #f0c15c; }
+.training-status-box.tone-error   { border-color: #b33430; background: #2a1614; color: #f08080; }
+ 
+/* Note card */
+.tplay-note-card {
+  padding: 10px 14px;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 0.87em;
+  border-color: #2a3b5a;
+}
+.tplay-note-icon { flex-shrink: 0; }
+.tplay-note-text { color: #8a99ad; font-style: italic; }
+ 
+/* Bottom actions row */
+.tplay-actions-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.tplay-moves-counter {
+  font-size: 0.85em;
+  color: #8a99ad;
+}
+.tplay-moves-counter b { color: #26bbff; }
+ 
+.tplay-skip-btn {
+  background: transparent;
+  border: 1px solid #555;
+  color: #aaa;
+  padding: 6px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85em;
+  transition: border-color 0.15s, color 0.15s;
+}
+.tplay-skip-btn:hover {
+  border-color: #f0c15c;
+  color: #f0c15c;
+}
+ 
+/* ---- Responsive ---- */
+@media (max-width: 860px) {
+  .tplay-layout {
+    grid-template-columns: 1fr;
+    padding: 12px;
+  }
+  .tplay-history-scroll {
+    max-height: 24vh;
+  }
+}
+ 
+/* ==========================================================================
+   History-mode toast (shown when user tries to drag a piece in review mode)
+   ========================================================================== */
+.tplay-history-toast {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%) translateY(8px);
+  background: rgba(15, 28, 56, 0.96);
+  border: 1px solid #f0c15c;
+  color: #f0c15c;
+  font-size: 0.88em;
+  font-weight: 600;
+  padding: 9px 18px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 100;
+  opacity: 0;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.tplay-history-toast.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }

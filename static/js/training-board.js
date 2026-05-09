@@ -47,7 +47,7 @@ export async function fetchEngineMoves(fen, depth = 14) {
  *        Called when the user successfully drops a *legal* move.
  * @returns {{ board: any, chess: any, destroy: () => void }}
  */
-export function mountTrainingBoard({ fen, orientation, onUserMove }) {
+export function mountTrainingBoard({ fen, orientation, onUserMove, isLive = () => true }) {
   const chess = new Chess(fen);
   /* eslint-disable no-undef */
   const board = Chessboard("trainingBoard", {
@@ -58,15 +58,26 @@ export function mountTrainingBoard({ fen, orientation, onUserMove }) {
       "https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png",
 
     onDragStart: (_source, piece) => {
+      // Block dragging entirely while browsing history.
+      if (!isLive()) {
+        showHistoryToast();
+        return false;
+      }
       if (chess.game_over()) return false;
-      const turn       = chess.turn();          
-      const pieceColor = piece[0];              
+      const turn       = chess.turn();
+      const pieceColor = piece[0];
       if (turn !== pieceColor) return false;
       const userTurn = orientation === "white" ? "w" : "b";
       if (turn !== userTurn) return false;
     },
 
     onDrop: (source, target) => {
+      // Double-check: if somehow a drop fires while in history mode, snapback.
+      if (!isLive()) {
+        showHistoryToast();
+        return "snapback";
+      }
+
       const move = chess.move({
         from: source,
         to: target,
@@ -201,4 +212,46 @@ export function pickOpponentReply(topMoves, cfg) {
   );
   const choice = pool[Math.floor(Math.random() * pool.length)] || top;
   return choice.uci;
+}
+
+/* ==========================================================================
+   History-mode toast
+   ========================================================================== */
+
+/** Singleton toast element, created once and reused. */
+let _historyToastEl = null;
+let _historyToastTimer = null;
+
+/**
+ * Shows a non-blocking toast over the training board when the user tries
+ * to move a piece while browsing history.
+ *
+ * The toast auto-dismisses after 2 s. Multiple rapid calls debounce
+ * gracefully (timer resets without creating duplicate elements).
+ */
+export function showHistoryToast() {
+  const boardEl = document.getElementById("trainingBoard");
+  if (!boardEl) return;
+
+  // Create the element once and reuse it.
+  if (!_historyToastEl) {
+    _historyToastEl = document.createElement("div");
+    _historyToastEl.className = "tplay-history-toast";
+    _historyToastEl.textContent = "Go back to the last position to play";
+  }
+
+  // Attach to the board container if not already there.
+  if (!_historyToastEl.parentElement) {
+    boardEl.style.position = "relative"; // ensure positioning context
+    boardEl.appendChild(_historyToastEl);
+  }
+
+  // Trigger the visible state (CSS transition handles fade-in).
+  _historyToastEl.classList.add("visible");
+
+  // Reset auto-hide timer.
+  if (_historyToastTimer) clearTimeout(_historyToastTimer);
+  _historyToastTimer = setTimeout(() => {
+    if (_historyToastEl) _historyToastEl.classList.remove("visible");
+  }, 2000);
 }
