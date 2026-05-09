@@ -251,65 +251,133 @@ export function renderPositionList(controls) {
 }
 
 /* ==========================================================================
-   Active training (board view)
+   Active training — playing screen (split layout matching main review UI)
    ========================================================================== */
 
 /**
- * Renders the playing-screen skeleton: a board container on the left, a
- * status panel on the right. Caller is responsible for mounting the
- * chessboard.js instance into `#trainingBoard` and updating `#trainingStatus`.
+ * Renders the playing-screen with the same two-column layout as the main
+ * analysis view: eval-bar + board on the left, move history + status on
+ * the right. Caller mounts the chessboard.js instance into #trainingBoard
+ * and drives the right-column widgets through the exported helpers below.
  *
  * @param {{ session: import("./training-session.js").Session,
- *           skipScenario:()=>void }} controls
+ *           skipScenario:()=>void,
+ *           onNavigate:(type:string)=>void }} controls
  */
 export function renderPlayingScreen({ session, skipScenario, onNavigate }) {
-  const body = document.getElementById(BODY_ID);
-  body.innerHTML = `
-    <div class="training-playing-layout">
-      <div class="training-board-col">
-        <div id="trainingBoard" style="width: 100%"></div>
-        <div id="trainingStatus" class="training-status-box"></div>
-      </div>
-      <div class="training-history-col">
-        <div class="history-header">History</div>
-        <div id="trainingHistoryPanel" class="training-history-panel"></div>
-        
-        <div class="training-nav-steps">
-          <button id="navFirst" class="nav-btn">«</button>
-          <button id="navPrev" class="nav-btn">‹</button>
-          <button id="navNext" class="nav-btn">›</button>
-          <button id="navLast" class="nav-btn">»</button>
+  const root = body();
+  const spec  = session.positions[session.currentPositionIdx];
+
+  root.innerHTML = `
+    <div class="tplay-layout">
+
+      <!-- ===== LEFT: eval-bar + board ===== -->
+      <div class="tplay-board-col">
+
+        <!-- Scenario badge just above the board -->
+        <div class="tplay-scenario-badge">
+          <span class="tplay-badge-num">Scenario ${session.currentPositionIdx + 1} / ${session.positions.length}</span>
+          <span class="tplay-badge-reason">${escapeHtml(spec.reason)}</span>
         </div>
 
-        <button id="skipBtn" class="training-skip-btn">Skip Scenario</button>
+        <div class="tplay-board-wrap">
+          <!-- Eval bar (mirrors main .evalbar) -->
+          <div class="evalbar" id="trainingEvalBar">
+            <div class="evalfill" id="trainingEvalFill" style="height:50%"></div>
+            <span class="evaltext" id="trainingEvalText">0.0</span>
+          </div>
+
+          <!-- The actual chessboard host -->
+          <div id="trainingBoard" class="tplay-board"></div>
+        </div>
+
+        <!-- Nav buttons below board (mirrors main Prev/Next row) -->
+        <div class="tplay-nav-row">
+          <button id="navFirst" class="tplay-nav-btn" title="First">«</button>
+          <button id="navPrev"  class="tplay-nav-btn" title="Previous">‹</button>
+          <button id="navNext"  class="tplay-nav-btn" title="Next">›</button>
+          <button id="navLast"  class="tplay-nav-btn" title="Last">»</button>
+        </div>
+      </div>
+
+      <!-- ===== RIGHT: move list + status ===== -->
+      <div class="tplay-side-col">
+
+        <!-- Move history panel (mirrors main .history-panel) -->
+        <div class="card tplay-history-card">
+          <div class="tplay-history-label">📜 Move History</div>
+          <div id="trainingHistoryPanel" class="tplay-history-scroll"></div>
+        </div>
+
+        <!-- Status / feedback card -->
+        <div class="card tplay-status-card">
+          <div class="tplay-status-label">Status</div>
+          <div id="trainingStatus" class="training-status-box tone-info">
+            Loading…
+          </div>
+
+          <!-- "Want a hint?" prompt (hidden by default) -->
+          <div id="trainingHintBox" class="training-hint-box hidden" style="margin-top:12px">
+            <div style="font-size:0.9em; color:#f0c15c;">💡 Want a hint? Arrows will be drawn for the best moves.</div>
+            <div class="training-hint-actions">
+              <button id="trainingHintNo"  style="border-color:#555; color:#aaa;">No thanks</button>
+              <button id="trainingHintYes" class="training-cta">Show hint</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Scenario note (optional) -->
+        ${spec.note ? `
+        <div class="card tplay-note-card">
+          <span class="tplay-note-icon">ℹ️</span>
+          <span class="tplay-note-text">${escapeHtml(spec.note)}</span>
+        </div>` : ""}
+
+        <!-- Skip button -->
+        <div class="tplay-actions-row">
+          <span class="tplay-moves-counter">
+            Moves played: <b id="trainingMovesPlayed">0</b> / ${session.config.depthK}
+          </span>
+          <button id="skipBtn" class="tplay-skip-btn">Skip scenario</button>
+        </div>
+
       </div>
     </div>
   `;
 
-  // Keybinding
-  document.getElementById("navFirst").onclick = () => onNavigate('first');
-  document.getElementById("navPrev").onclick  = () => onNavigate('prev');
-  document.getElementById("navNext").onclick  = () => onNavigate('next');
-  document.getElementById("navLast").onclick  = () => onNavigate('last');
+  // Wire navigation buttons
+  document.getElementById("navFirst").onclick = () => onNavigate("first");
+  document.getElementById("navPrev").onclick  = () => onNavigate("prev");
+  document.getElementById("navNext").onclick  = () => onNavigate("next");
+  document.getElementById("navLast").onclick  = () => onNavigate("last");
   document.getElementById("skipBtn").onclick  = skipScenario;
+
+  // Keyboard shortcuts (arrow keys) — attach once, removed when modal closes
+  const _keyHandler = (e) => {
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+    if (e.key === "ArrowLeft")  { e.preventDefault(); onNavigate("prev"); }
+    if (e.key === "ArrowRight") { e.preventDefault(); onNavigate("next"); }
+    if (e.key === "Home")       { e.preventDefault(); onNavigate("first"); }
+    if (e.key === "End")        { e.preventDefault(); onNavigate("last"); }
+  };
+  document.addEventListener("keydown", _keyHandler);
+  // Store for cleanup
+  root._keyHandler = _keyHandler;
 }
 
+/* ==========================================================================
+   Playing-screen widget updaters (called by orchestrator after each event)
+   ========================================================================== */
+
 /**
- * Updates the in-scenario status text + move counter. Called whenever a
- * move is played or an attempt fails.
- *
+ * Updates the in-scenario status text.
  * @param {string|HTMLElement} msg
  * @param {{ tone?: "info"|"success"|"warning"|"error" }} [opts]
  */
 export function setStatus(msg, opts = {}) {
   const el = document.getElementById("trainingStatus");
   if (!el) return;
-  el.classList.remove(
-    "tone-info",
-    "tone-success",
-    "tone-warning",
-    "tone-error"
-  );
+  el.classList.remove("tone-info", "tone-success", "tone-warning", "tone-error");
   el.classList.add(`tone-${opts.tone || "info"}`);
   if (typeof msg === "string") el.textContent = msg;
   else {
@@ -325,13 +393,13 @@ export function setMovesPlayed(n) {
 }
 
 /**
- * Updates the small training eval-bar to the given engine score.
- * @param {number|null} score
- * @param {number|null} mate
+ * Updates the training eval bar.
+ * @param {number|null} score  Engine eval in pawns (white POV).
+ * @param {number|null} mate   Mate-in-N (positive = white winning).
  */
 export function setEvalBar(score, mate = null) {
   const fill = document.getElementById("trainingEvalFill");
-  const txt = document.getElementById("trainingEvalText");
+  const txt  = document.getElementById("trainingEvalText");
   if (!fill || !txt) return;
 
   if (mate != null) {
@@ -373,42 +441,67 @@ export function hideHintPrompt() {
   if (box) box.classList.add("hidden");
 }
 
-
 /**
- * Renders the history panel
- * @param {string[]} precedingMoves - SAN array of the moves from the start
- * @param {string[]} sessionMoves - SAN array of additional moves played in the training
+ * Renders the history panel as a two-column move table (matching the main
+ * game tree style): move number | white SAN | black SAN.
+ *
+ * Preceding moves (context) are shown in a muted style; session moves are
+ * shown in the normal active style. The active move is highlighted.
+ *
+ * @param {string[]} precedingMoves  SANs replayed before the scenario started.
+ * @param {string[]} sessionMoves    SANs played during the training session.
+ * @param {number}   currentViewIdx  Flat index of the currently displayed position.
+ * @param {(idx:number)=>void} onJump  Called when user clicks a move.
  */
 export function renderTrainingHistory(precedingMoves = [], sessionMoves = [], currentViewIdx, onJump) {
   const container = document.getElementById("trainingHistoryPanel");
   if (!container) return;
 
-  const allMoves = [...precedingMoves, ...sessionMoves];
+  const allMoves   = [...precedingMoves, ...sessionMoves];
+  const splitAt    = precedingMoves.length; // first session-move index
   let html = "";
 
   for (let i = 0; i < allMoves.length; i += 2) {
     const moveNum = Math.floor(i / 2) + 1;
-    const wIdx = i;
-    const bIdx = i + 1;
+    const wIdx    = i;
+    const bIdx    = i + 1;
+
+    const wSan = allMoves[wIdx] ?? "";
+    const bSan = allMoves[bIdx] ?? "";
+
+    // "preceding" vs "session" styling
+    const wContext = wIdx < splitAt;
+    const bContext = bIdx < splitAt;
+
+    const wActive = wIdx === currentViewIdx ? "active-main" : "";
+    const bActive = bIdx === currentViewIdx ? "active-main" : "";
+
+    const wClass = `tplay-move-cell ${wContext ? "tplay-move-context" : ""} ${wActive}`;
+    const bClass = `tplay-move-cell ${bContext ? "tplay-move-context" : ""} ${bActive}`;
 
     html += `
-      <div class="history-move-row">
-        <div class="history-move-num">${moveNum}.</div>
-        <div class="history-move-san ${wIdx === currentViewIdx ? 'active-view' : ''}" data-idx="${wIdx}">${allMoves[wIdx]}</div>
-        <div class="history-move-san ${allMoves[bIdx] ? (bIdx === currentViewIdx ? 'active-view' : '') : ''}" data-idx="${bIdx}">
-          ${allMoves[bIdx] || ""}
-        </div>
+      <div class="history-row">
+        <span class="move-number">${moveNum}.</span>
+        <span class="${wClass.trim()}" data-idx="${wIdx}">${escapeHtml(wSan)}</span>
+        <span class="${bClass.trim()}" data-idx="${bIdx}">${escapeHtml(bSan)}</span>
       </div>`;
   }
-  container.innerHTML = html;
 
-  // Click on the move
-  container.querySelectorAll('.history-move-san').forEach(el => {
+  container.innerHTML = html || `<div class="tplay-no-moves">No moves yet</div>`;
+
+  // Click handlers
+  container.querySelectorAll(".tplay-move-cell").forEach((el) => {
+    const san = el.textContent.trim();
+    if (!san) return; // empty black cell on last row
     el.onclick = () => {
-      const idx = parseInt(el.getAttribute('data-idx'));
+      const idx = parseInt(el.getAttribute("data-idx"), 10);
       if (!isNaN(idx)) onJump(idx);
     };
   });
+
+  // Auto-scroll so the active move stays visible
+  const activeEl = container.querySelector(".active-main");
+  if (activeEl) activeEl.scrollIntoView({ block: "nearest" });
 }
 
 /* ==========================================================================
@@ -423,7 +516,14 @@ export function renderTrainingHistory(precedingMoves = [], sessionMoves = [], cu
  */
 export function renderResults(controls) {
   const { session, outcomes } = controls;
+
+  // Clean up keyboard listener attached during playing screen
   const root = body();
+  if (root._keyHandler) {
+    document.removeEventListener("keydown", root._keyHandler);
+    root._keyHandler = null;
+  }
+
   root.innerHTML = "";
 
   const wrap = document.createElement("div");
