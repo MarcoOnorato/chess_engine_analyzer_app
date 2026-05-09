@@ -23,6 +23,8 @@ import { bindLichess } from "./lichess.js";
 import { bindPgnLoader } from "./pgn.js";
 import { bindCollapsible } from "./collapsible.js";
 import { renderHistory } from "./history.js";
+import { bindRightClickArrows, clearUserArrows } from "./board-arrows.js";
+
 
 window.addEventListener("load", () => {
   state.board = Chessboard("board", {
@@ -33,6 +35,12 @@ window.addEventListener("load", () => {
     pieceTheme:
       "https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png",
   });
+
+  // Arrows creation with RMB drag
+  bindRightClickArrows(
+    document.getElementById("board"),
+    () => state.board.orientation()
+  );
 
   // Keep the SVG arrow overlay aligned with the board on resize.
   window.addEventListener("resize", () => {

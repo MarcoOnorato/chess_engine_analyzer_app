@@ -33,6 +33,7 @@ import { updatePgnNav } from "./navigation.js";
 import { analyzeCurrentPosition } from "./analysis.js";
 import { calculateGameAccuracy, renderEvalChart } from "./accuracy.js";
 import { collapseLoadPanel } from "./collapsible.js";
+import { renderTrainingModal } from "./training.js";
 
 /** Wires the PGN loading modal and buttons to the pipeline. */
 export function bindPgnLoader() {
@@ -152,6 +153,11 @@ export async function loadPgn(directPgn = null) {
     calculateGameAccuracy();
     renderEvalChart((mainIndex) => jumpToMainLineIndex(mainIndex + 1));
     scrollHistoryToCurrentMove();
+
+    // enable training button
+    const trainingBtn = document.getElementById("trainingBtn");
+    trainingBtn.disabled = false;
+    trainingBtn.onclick = renderTrainingModal;
 
     const prev_fen = mainLineTip.parent ? mainLineTip.parent.fenAfter : null;
     const last_move_uci = mainLineTip.uci || null;

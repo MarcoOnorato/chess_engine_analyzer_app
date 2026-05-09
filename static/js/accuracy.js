@@ -73,6 +73,8 @@ export function renderEvalChart(onPointClick) {
   const labels = ml.map((_, i) => Math.floor(i / 2) + 1);
   const data = ml.map((m) => {
 
+    console.log(m)
+
     if (m.eval_mate != null) {
       return m.eval_mate > 0 ? 10 : -10;
     }
@@ -98,22 +100,85 @@ export function renderEvalChart(onPointClick) {
           borderColor: "#26bbff",
           backgroundColor: "rgba(38, 187, 255, 0.1)",
           pointRadius: (context) => {
+            const node = ml[context.dataIndex];
             const highlightIndex = mainLineHighlightIndex(ml);
-            return context.dataIndex === highlightIndex ? 6 : 3;
-          },
           
+            if (context.dataIndex === highlightIndex) {
+              return 7;
+            }
+          
+            const label = node?.evalData?.label?.toLowerCase();
+          
+            if (
+              ["brilliant", "great", "blunder"].includes(label)
+            ) {
+              return 5;
+            }
+          
+            return 3;
+          },
           pointBackgroundColor: (context) => {
+            const node = ml[context.dataIndex];
             const highlightIndex = mainLineHighlightIndex(ml);
-            return context.dataIndex === highlightIndex
-              ? "#ffffff"
-              : "#26bbff";
+          
+            // Highlight current cursor
+            if (context.dataIndex === highlightIndex) {
+              return "#ffffff";
+            }
+            
+            const label = node?.evalData?.label?.toLowerCase();
+            // High impact moves
+            const importantLabels = [
+              "brilliant",
+              "great",
+              "best",
+              "blunder",
+              "mistake",
+              "miss",
+              "inaccuracy",
+            ];
+          
+            if (
+              label &&
+              importantLabels.includes(label) &&
+              node.evalData?.color
+            ) {
+              return node.evalData.color;
+            }
+          
+            // Default
+            return "#26bbff";
           },
           
           pointBorderColor: (context) => {
+            const node = ml[context.dataIndex];
             const highlightIndex = mainLineHighlightIndex(ml);
-            return context.dataIndex === highlightIndex
-              ? "#ffffff"
-              : "#26bbff";
+          
+            if (context.dataIndex === highlightIndex) {
+              return "#ffffff";
+            }
+          
+            const label = node?.evalData?.label?.toLowerCase();
+          
+            const importantLabels = [
+              "brilliant",
+              "great",
+              "best",
+              "blunder",
+              "mistake",
+              "miss",
+              "inaccuracy",
+            ];
+          
+            if (
+              label &&
+              importantLabels.includes(label) &&
+              node.evalData?.color
+            ) {
+              return node.evalData.color;
+            }
+          
+            return "#26bbff";
           },
           pointHoverRadius: 7,
         },

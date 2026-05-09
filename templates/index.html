@@ -115,7 +115,8 @@
     <!-- Game Tree -->
     <div class="card history-panel">
       <div class="game-tree-header">
-        <h3>📜 Game <span id="pgnPos" style="float:right; font-size:0.8em;">0 / 0</span></h3>
+        <h3>📜 Game <button id="trainingBtn" title="Start Training!" disabled>Start Training!</button></h3>
+        
         <div class="tree-actions">
           <button id="promoteBtn" title="Promote variation to main line" disabled>⤴ Promote var</button>
           <button id="deleteVarBtn" title="Delete current variation" disabled>🗑 Delete var</button>
@@ -151,6 +152,18 @@
     </div>
 
   </div>
+</div>
+
+<!-- TRAINING MODAL (full-page overlay; click-outside does NOT close it) -->
+<div id="trainingModal" class="training-modal hidden" role="dialog" aria-modal="true">
+  <header class="training-modal-header">
+    <button id="trainingExitBtn" class="training-return-btn" type="button">
+      ← Return to main game
+    </button>
+    <h2 id="trainingPhaseLabel" class="training-modal-title">Training</h2>
+    <div class="training-header-spacer"></div>
+  </header>
+  <main id="trainingModalBody" class="training-modal-body"></main>
 </div>
 
 <!-- OPENINGS MODAL -->
