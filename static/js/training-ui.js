@@ -336,7 +336,10 @@ export function renderPlayingScreen({ session, skipScenario, onNavigate }) {
         <!-- Skip button -->
         <div class="tplay-actions-row">
           <span class="tplay-moves-counter">
-            Moves played: <b id="trainingMovesPlayed">0</b> / ${session.config.depthK}
+            ${spec.isMateScenario
+              ? `Mate in <b id="trainingMovesPlayed">${Math.ceil((spec.mateForcedDepth || 1) / 2)}</b> — find every move`
+              : `Moves played: <b id="trainingMovesPlayed">0</b> / ${session.config.depthK}`
+            }
           </span>
           <button id="skipBtn" class="tplay-skip-btn">Skip scenario</button>
         </div>
@@ -388,6 +391,15 @@ export function setStatus(msg, opts = {}) {
 
 /** @param {number} n */
 export function setMovesPlayed(n) {
+  const el = document.getElementById("trainingMovesPlayed");
+  if (el) el.textContent = String(n);
+}
+
+/**
+ * Updates the "N moves to forced checkmate" counter during a mate scenario.
+ * @param {number} n - Remaining user moves to deliver checkmate.
+ */
+export function setMateMovesLeft(n) {
   const el = document.getElementById("trainingMovesPlayed");
   if (el) el.textContent = String(n);
 }

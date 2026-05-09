@@ -38,6 +38,7 @@ import {
   renderResults,
   setStatus,
   setMovesPlayed,
+  setMateMovesLeft,
   setEvalBar,
   showHintPrompt,
   hideHintPrompt,
@@ -173,10 +174,20 @@ function applyConfig(patch) {
 
 function prepareScenarios() {
   const handler = getModeHandler(session.mode);
-  session.positions = handler.pickPositions({
+  let positions = handler.pickPositions({
     userColor: session.userColor,
     max: session.config.maxPositions,
   });
+
+  // Filter out mate scenarios whose forced depth exceeds the configured depthK.
+  // A Mate-in-N requires mateForcedDepth = N*2-1 half-moves; playing it with
+  // fewer moves available would cut off the mating line mid-sequence.
+  positions = positions.filter((p) => {
+    if (!p.isMateScenario || p.mateForcedDepth == null) return true;
+    return p.mateForcedDepth <= session.config.depthK;
+  });
+
+  session.positions = positions;
   session.currentPositionIdx = 0;
   goToPhase(PHASES.POSITION_LIST);
 }
@@ -188,6 +199,7 @@ function prepareScenarios() {
 async function startScenario(idx) {
   session.currentPositionIdx = idx;
   resetPositionState(session);
+  session.mateDelivered = false; // reset per-scenario mate flag
   viewIndex = -1;
 
   goToPhase(PHASES.PLAYING);
@@ -291,6 +303,23 @@ function promptUserToMove() {
     finishScenario();
     return;
   }
+
+  const spec = session.positions[session.currentPositionIdx];
+
+  if (spec.isMateScenario) {
+    // Count how many user moves remain in the mating line.
+    // mateForcedDepth = total half-moves; user moves = ceil(mateForcedDepth/2).
+    // Each accepted user move increments session.movesPlayed.
+    const totalUserMoves = Math.ceil(spec.mateForcedDepth / 2);
+    const userMovesPlayed = Math.floor(session.movesPlayed / 2); // only user half-moves
+    const mateMovesLeft = totalUserMoves - userMovesPlayed;
+    setStatus(
+      `Your move. ${mateMovesLeft} move${mateMovesLeft === 1 ? "" : "s"} to forced checkmate.`,
+      { tone: "info" }
+    );
+    return;
+  }
+
   const remaining = session.config.depthK - session.movesPlayed;
   setStatus(
     `Your move. ${remaining} move${remaining === 1 ? "" : "s"} left in this scenario.`,
@@ -324,11 +353,26 @@ async function handleUserMove(uci, san, fenAfter) {
 
   session.fen = fenAfter;
   session.movesPlayed++;
-  setMovesPlayed(session.movesPlayed);
+
+  const spec = session.positions[session.currentPositionIdx];
+  if (spec.isMateScenario) {
+    const totalUserMoves = Math.ceil((spec.mateForcedDepth || 1) / 2);
+    const userMovesPlayed = Math.ceil(session.movesPlayed / 2);
+    const mateMovesLeft = Math.max(0, totalUserMoves - userMovesPlayed);
+    setMateMovesLeft(mateMovesLeft);
+  } else {
+    setMovesPlayed(session.movesPlayed);
+  }
+
   updateHistoryUI();
   setStatus(`Good — ${san}. Opponent thinking…`, { tone: "success" });
 
-  if (session.movesPlayed >= session.config.depthK) {
+  // Depth check: for mate scenarios use mateForcedDepth; for normal scenarios use depthK.
+  const depthLimit = spec.isMateScenario
+    ? (spec.mateForcedDepth ?? session.config.depthK)
+    : session.config.depthK;
+
+  if (session.movesPlayed >= depthLimit) {
     await afterFinalUserMove();
     return;
   }
@@ -340,11 +384,29 @@ async function handleUserMove(uci, san, fenAfter) {
  * After the user's last counted move (#K), refresh eval and finalize
  * scenario. We don't make the opponent reply — the K-th move is the
  * user's contribution and the eval after it is the outcome.
+ *
+ * For mate scenarios we skip the eval-delta calculation entirely and
+ * instead flag whether checkmate was actually delivered.
  */
 async function afterFinalUserMove() {
+  const spec = session.positions[session.currentPositionIdx];
+
+  if (spec.isMateScenario) {
+    // Check whether the current position is checkmate (game over).
+    const isCheckmate = boardCtx?.chess?.in_checkmate?.() ?? false;
+    // Store a sentinel so evaluateOutcome can detect the mate case.
+    session.finalEval = null;
+    session.mateDelivered = isCheckmate;
+    finishScenario();
+    return;
+  }
+
   const data = await fetchEngineMoves(session.fen);
   setEvalBar(data.eval, data.eval_mate);
-  session.finalEval = signedForUser(data.eval);
+  // BUG FIX: finalEval must use eval (user-POV), not eval_mate.
+  // eval_mate is a separate field (mate-in-N integer) and must never be
+  // mixed into the pawn-unit delta calculation.
+  session.finalEval = signedForUser(data.eval ?? null);
   finishScenario();
 }
 
@@ -355,7 +417,13 @@ async function playOpponentTurn() {
     const reply = pickOpponentReply(data.top_moves || [], session.config);
     if (!reply) {
       // No legal moves → game over (mate or stalemate).
-      session.finalEval = signedForUser(data.eval);
+      const spec = session.positions[session.currentPositionIdx];
+      if (spec.isMateScenario) {
+        session.finalEval = null;
+        session.mateDelivered = boardCtx?.chess?.in_checkmate?.() ?? false;
+      } else {
+        session.finalEval = signedForUser(data.eval ?? null);
+      }
       finishScenario();
       return;
     }
@@ -431,9 +499,29 @@ function handleWrongMove(uci) {
 
 function finishScenario() {
   const handler = getModeHandler(session.mode);
-  const outcome = handler.evaluateOutcome(session);
+  const spec = session.positions[session.currentPositionIdx];
+  let outcome = handler.evaluateOutcome(session);
+
+  // For mate scenarios, replace the eval-delta outcome with a checkmate verdict.
+  // evaluateOutcome may try to compute a finalEval-baselineEval delta, which is
+  // meaningless (and potentially buggy) when both are null for mate lines.
+  if (spec.isMateScenario) {
+    if (session.mateDelivered) {
+      outcome = {
+        headline: "✅ Checkmate delivered!",
+        detail: `Forced mate found — all ${Math.ceil((spec.mateForcedDepth || 1) / 2)} moves correct.`,
+      };
+      session.score.correctFirstTry += (session.attempts === 0 && session.hintLevel === 0) ? 1 : 0;
+    } else {
+      outcome = {
+        headline: "❌ Mate not delivered",
+        detail: "The mating line was not completed. Review the position.",
+      };
+    }
+  }
+
   outcomes.push({
-    spec: session.positions[session.currentPositionIdx],
+    spec,
     headline: outcome.headline,
     detail: outcome.detail,
   });
