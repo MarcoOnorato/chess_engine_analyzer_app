@@ -1,0 +1,737 @@
+/* ==========================================================================
+    TRAINING MODAL — full-page overlay, click-outside disabled by design.
+    ========================================================================== */
+
+#trainingBoard {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+}
+    
+#trainingBoard .piece-417db {
+    z-index: 9999 !important;
+}
+    
+.training-board-host {
+    overflow: visible !important;
+}
+    
+.training-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 5000;
+    background: radial-gradient(circle at 30% 20%, #213453, #020617);
+    display: flex;
+    flex-direction: column;
+    color: #ebf8ff;
+    overflow: hidden;
+}
+    
+.training-modal-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 24px;
+    border-bottom: 1px solid #1a2a47;
+    background: #02050c;
+    position: relative;
+    top: 0;
+    z-index: 10;
+}
+    
+.training-return-btn {
+    background: transparent;
+    border: 1px solid #88c1e2;
+    color: #ebf8ff;
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 0.9em;
+    white-space: nowrap;
+}
+
+.training-return-btn:hover {
+    background: rgba(38, 187, 255, 0.08);
+}
+    
+.training-modal-title {
+    flex: 1;
+    text-align: center;
+    font-size: 1.1em;
+    font-weight: 600;
+    margin: 0;
+    color: #26bbff;
+    letter-spacing: 0.3px;
+}
+    
+.training-playing-layout {
+    display: flex;
+    gap: 20px;
+    max-width: 900px;
+    margin: 0 auto;
+}
+    
+.history-move-row {
+    display: flex;
+    border-bottom: 1px solid #1a2a47;
+    padding: 4px 0;
+}
+
+.history-move-num { width: 30px; color: #666; }
+.history-move-san {
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 3px;
+}
+
+.history-move-san:hover {
+    background: rgba(38, 187, 255, 0.2);
+}
+
+.history-move-san.active-view {
+    background: #26bbff;
+    color: #02050c !important;
+    font-weight: bold;
+}
+
+.nav-btn {
+    background: #1a2a47;
+    border: 1px solid #26bbff;
+    color: white;
+    padding: 5px 12px;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.nav-btn:hover {
+    background: #26bbff;
+}
+.history-move-san.scenario-move { 
+    color: #26bbff; 
+    font-weight: bold; 
+}
+
+.training-header-spacer { width: 220px; }
+
+.training-modal-body {
+    flex: 1;
+    padding: 36px 32px 60px;
+    max-width: 1400px;
+    width: 100%;
+    margin: 0 auto;
+    box-sizing: border-box;
+    overflow: auto;
+}
+
+/* --- Mode select grid -------------------------------------------------- */
+
+.training-mode-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 18px;
+    max-width: 1000px;
+    margin: 30px auto 0;
+}
+
+.training-mode-card {
+    background: #101c38;
+    border: 1px solid #1a2a47;
+    border-radius: 12px;
+    padding: 24px 22px;
+    text-align: left;
+    color: #ebf8ff;
+    cursor: pointer;
+    transition: border-color 0.2s ease, transform 0.2s ease, background 0.2s ease;
+    font-family: inherit;
+}
+.training-mode-card:hover {
+    border-color: #26bbff;
+    background: #142346;
+    transform: translateY(-2px);
+}
+
+.training-mode-title {
+    font-size: 1.15em;
+    font-weight: 700;
+    color: #26bbff;
+    margin-bottom: 10px;
+}
+.training-mode-desc {
+    font-size: 0.9em;
+    color: #cbd6e8;
+    line-height: 1.45;
+}
+
+/* --- Config screen ----------------------------------------------------- */
+
+.training-config {
+    max-width: 640px;
+    margin: 20px auto 0;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.training-fieldset {
+    background: #101c38;
+    border: 1px solid #1a2a47;
+    border-radius: 10px;
+    padding: 16px 18px;
+}
+
+.training-fieldset-legend {
+    font-size: 0.75em;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: #8adeff;
+    font-weight: 600;
+    margin-bottom: 10px;
+}
+
+.training-btn-group {
+    display: flex;
+    gap: 8px;
+}
+.training-btn-group-item {
+    flex: 1;
+    padding: 10px;
+    background: #02050c;
+    border: 1px solid #2a3b5a;
+    color: #cbd6e8;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+}
+.training-btn-group-item.active,
+.training-btn-group-item:hover {
+    border-color: #26bbff;
+    color: #26bbff;
+    background: #0a1730;
+}
+
+.training-slider-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.training-slider-row input[type="range"] {
+    flex: 1;
+    accent-color: #26bbff;
+    cursor: pointer;
+}
+.training-slider-value {
+    min-width: 32px;
+    text-align: right;
+    font-weight: 700;
+    color: #26bbff;
+}
+
+.training-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    }
+.training-toggle-row input { accent-color: #26bbff; }
+
+.training-config-footer {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 8px;
+    gap: 12px;
+}
+.training-config-footer button {
+    padding: 10px 20px;
+    background: #02050c;
+    border: 1px solid #88c1e2;
+    border-radius: 6px;
+    color: #ebf8ff;
+    cursor: pointer;
+    font-weight: 600;
+}
+.training-cta {
+    background: #2d7191 !important;
+    border-color: #26bbff !important;
+    color: #fff !important;
+}
+.training-cta:hover { background: #378ab1 !important; }
+
+/* --- Position list ----------------------------------------------------- */
+
+.training-position-list-wrap {
+    max-width: 760px;
+    margin: 10px auto 0;
+}
+
+.training-list-head h3 {
+    margin: 0 0 4px;
+    color: #26bbff;
+    font-size: 1.15em;
+}
+.training-list-head .dim,
+.dim {
+    color: #8a99ad;
+    font-size: 0.88em;
+}
+
+.training-position-list {
+    list-style: none;
+    padding: 0;
+    margin: 18px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.training-position-item {
+    background: #101c38;
+    border: 1px solid #1a2a47;
+    border-radius: 8px;
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+.training-position-item:hover {
+    border-color: #26bbff;
+    background: #142346;
+}
+.training-pos-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 600;
+}
+.training-pos-idx {
+    background: #2d7191;
+    color: white;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 0.8em;
+}
+.training-pos-reason { color: #ebf8ff; }
+.training-pos-context { color: #8adeff; font-size: 0.85em; margin-top: 4px; }
+.training-pos-note { color: #8a99ad; font-size: 0.82em; margin-top: 4px; font-style: italic; }
+
+.training-empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: #cbd6e8;
+}
+
+/* --- Playing screen ---------------------------------------------------- */
+
+
+#trainingBoard .board-b72b1 {
+    width: 100% !important;
+}
+
+.training-side-card {
+    padding: 16px;
+}
+
+.training-evalfill {
+    background: white;
+    width: 100%;
+    height: 50%;
+    transition: height 0.4s ease;
+}
+.training-evaltext {
+    position: absolute;
+    width: 100%;
+    text-align: center;
+    bottom: 5px;
+    font-size: 11px;
+    color: #000;
+    font-weight: bold;
+    z-index: 5;
+}
+.training-board-container {
+    width: 70vh;
+    max-width: 760px;
+    min-width: 520px;
+    margin: 0 auto;
+}
+.training-side-card {
+    padding: 16px;
+}
+.training-side-col {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+.training-side-head {
+    background: #101c38;
+    border: 1px solid #1a2a47;
+    border-radius: 10px;
+    padding: 14px 16px;
+}
+.training-scenario-tag {
+    font-size: 0.75em;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: #8adeff;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+.training-scenario-reason {
+    font-size: 1em;
+    font-weight: 600;
+    color: #ebf8ff;
+}
+
+.training-step-indicator {
+    background: #02050c;
+    border: 1px solid #1a2a47;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 0.9em;
+}
+.training-step-indicator b { color: #26bbff; }
+
+.training-status {
+    background: #101c38;
+    border: 1px solid #1a2a47;
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-size: 0.95em;
+    line-height: 1.45;
+    min-height: 80px;
+}
+.training-status.tone-success { border-color: #69923e; background: #122718; }
+.training-status.tone-warning { border-color: #f0c15c; background: #2a2517; }
+.training-status.tone-error { border-color: #b33430; background: #2a1614; }
+
+.training-hint-box {
+    background: #1d2333;
+    border: 1px solid #f0c15c;
+    border-radius: 8px;
+    padding: 14px;
+}
+.training-hint-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 10px;
+}
+.training-hint-actions button {
+    padding: 6px 12px;
+    border-radius: 4px;
+    border: 1px solid #88c1e2;
+    background: #02050c;
+    color: #ebf8ff;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.training-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+.training-actions button {
+    background: transparent;
+    border: 1px solid #555;
+    color: #aaa;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.training-actions button:hover { color: #f0c15c; border-color: #f0c15c; }
+
+/* --- Hint visuals ------------------------------------------------------ */
+
+.training-hint-highlight {
+/* chessboard.js squares are <div class="square-XX">; we add a halo. */
+    box-shadow: inset 0 0 0 4px rgba(38, 187, 255, 0.7) !important;
+}
+
+/* SVG arrows are absolute over the board host — see training-hints.js */
+.training-hint-arrow {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+}
+
+/* --- Results ----------------------------------------------------------- */
+
+.training-results {
+    max-width: 760px;
+    margin: 10px auto 0;
+}
+
+.training-results-summary {
+    background: #101c38;
+    border: 1px solid #1a2a47;
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin-bottom: 16px;
+}
+.training-results-summary h3 {
+    margin: 0 0 14px;
+    color: #26bbff;
+    font-size: 1.15em;
+}
+
+.training-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+}
+.training-stats-grid > div {
+    background: #02050c;
+    border: 1px solid #1a2a47;
+    border-radius: 8px;
+    padding: 12px;
+    text-align: center;
+}
+.stat-num { font-size: 1.6em; font-weight: 700; color: #26bbff; }
+.stat-label { font-size: 0.75em; text-transform: uppercase; color: #8a99ad; margin-top: 2px; }
+
+.training-results-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.training-results-list li {
+    background: #101c38;
+    border: 1px solid #1a2a47;
+    border-radius: 8px;
+    padding: 12px 14px;
+}
+.training-result-headline { font-weight: 700; color: #ebf8ff; }
+.training-result-detail { font-size: 0.88em; color: #8adeff; margin-top: 2px; }
+.training-result-source { font-size: 0.82em; margin-top: 4px; }
+
+@media (max-width: 900px) {
+.training-playing { grid-template-columns: 1fr; }
+.training-stats-grid { grid-template-columns: repeat(2, 1fr); }
+.training-header-spacer { display: none; }
+}
+
+
+/* ==========================================================================
+    TRAINING PLAYING SCREEN — two-column layout matching main review UI
+    ========================================================================== */
+
+/* Outer two-column grid */
+.tplay-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 70vh) minmax(280px, 380px);
+    gap: 24px;
+    align-items: start;
+    justify-content: center;
+    padding: 16px 24px;
+    height: 100%;
+    box-sizing: border-box;
+}
+
+/* ---- Left column ---- */
+.tplay-board-col {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+}
+
+/* Scenario badge above the board */
+.tplay-scenario-badge {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.tplay-badge-num {
+    background: #2d7191;
+    color: #fff;
+    border-radius: 4px;
+    padding: 3px 10px;
+    font-size: 0.78em;
+    font-weight: 700;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.tplay-badge-reason {
+    color: #8adeff;
+    font-size: 0.88em;
+    font-weight: 600;
+}
+
+/* Board + eval-bar wrapper (mirrors main .board-container) */
+.tplay-board-wrap {
+    display: flex;
+    align-items: stretch;
+    gap: 12px;
+    width: 100%;
+}
+
+/* The chessboard host div */
+.tplay-board {
+    flex: 1;
+    min-width: 0;
+}
+
+/* chessboard.js overrides inside training board */
+#trainingBoard .board-b72b1 {
+    width: 100% !important;
+}
+
+/* Nav row below the board */
+.tplay-nav-row {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+}
+.tplay-nav-btn {
+    background: #02050c;
+    border: 1px solid #88c1e2;
+    color: #ebf8ff;
+    padding: 6px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1.1em;
+    font-weight: 700;
+    transition: background 0.15s;
+}
+.tplay-nav-btn:hover {
+    background: #101c38;
+    border-color: #26bbff;
+    color: #26bbff;
+}
+
+/* ---- Right column ---- */
+.tplay-side-col {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+}
+
+/* Move history card */
+.tplay-history-card {
+    padding: 12px 14px;
+}
+.tplay-history-label {
+    font-size: 0.72em;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: #8adeff;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+.tplay-history-scroll {
+    overflow-y: auto;
+    max-height: 36vh;
+    font-size: 0.93em;
+    line-height: 1.7;
+}
+.tplay-no-moves {
+    color: #555;
+    font-style: italic;
+    font-size: 0.9em;
+    padding: 8px 0;
+}
+
+/* Move rows (reuse existing .history-row + .move-number grid) */
+.tplay-move-cell {
+    cursor: pointer;
+    padding: 2px 5px;
+    border-radius: 4px;
+    transition: background 0.12s;
+}
+.tplay-move-cell:hover {
+    background: #0d4f5f75;
+    color: #8adeff;
+}
+.tplay-move-cell.tplay-move-context {
+    color: #556070;       /* muted: these are "already played" context moves */
+}
+.tplay-move-cell.active-main {
+    border: 1px solid #26bbff;
+    background: #02050c;
+    color: #26bbff;
+    font-weight: bold;
+}
+
+/* Status card */
+.tplay-status-card {
+    padding: 12px 14px;
+}
+.tplay-status-label {
+    font-size: 0.72em;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: #8adeff;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+/* Reuse / override the existing .training-status-box tones */
+.training-status-box {
+    background: #101c38;
+    border: 1px solid #1a2a47;
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 0.93em;
+    line-height: 1.5;
+    min-height: 60px;
+}
+.training-status-box.tone-info    { border-color: #1a2a47; background: #101c38; }
+.training-status-box.tone-success { border-color: #69923e; background: #122718; color: #a8e6a3; }
+.training-status-box.tone-warning { border-color: #f0c15c; background: #2a2517; color: #f0c15c; }
+.training-status-box.tone-error   { border-color: #b33430; background: #2a1614; color: #f08080; }
+
+/* Note card */
+.tplay-note-card {
+    padding: 10px 14px;
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    font-size: 0.87em;
+    border-color: #2a3b5a;
+}
+.tplay-note-icon { flex-shrink: 0; }
+.tplay-note-text { color: #8a99ad; font-style: italic; }
+
+/* Bottom actions row */
+.tplay-actions-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.tplay-moves-counter {
+    font-size: 0.85em;
+    color: #8a99ad;
+    }
+.tplay-moves-counter b { color: #26bbff; }
+
+.tplay-skip-btn {
+    background: transparent;
+    border: 1px solid #555;
+    color: #aaa;
+    padding: 6px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85em;
+    transition: border-color 0.15s, color 0.15s;
+}
+.tplay-skip-btn:hover {
+    border-color: #f0c15c;
+    color: #f0c15c;
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 860px) {
+.tplay-layout {
+    grid-template-columns: 1fr;
+    padding: 12px;
+}
+.tplay-history-scroll {
+    max-height: 24vh;
+}
+}

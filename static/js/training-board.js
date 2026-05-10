@@ -214,6 +214,73 @@ export function pickOpponentReply(topMoves, cfg) {
   return choice.uci;
 }
 
+const CHECK_CLASS = "tplay-check-highlight";
+ 
+/**
+ * If the side to move in `chess` is in check, adds a red-ring CSS class to
+ * the king's square element inside `#trainingBoard`. Removes it otherwise.
+ *
+ * Safe to call after every half-move; it always starts by clearing the old
+ * highlight so stale rings never accumulate.
+ *
+ * @param {any} chess  A chess.js Chess instance reflecting the current position.
+ */
+export function highlightCheck(chess) {
+  clearCheckHighlight();
+  if (!chess || !chess.in_check()) return;
+ 
+  const kingSq = findKingSquare(chess.fen(), chess.turn());
+  if (!kingSq) return;
+ 
+  const boardEl = document.getElementById("trainingBoard");
+  if (!boardEl) return;
+ 
+  const sqEl = boardEl.querySelector(`.square-${kingSq}`);
+  if (sqEl) sqEl.classList.add(CHECK_CLASS);
+}
+ 
+/**
+ * Removes the check-highlight from any square inside #trainingBoard.
+ * Idempotent — safe to call when there is no highlight.
+ */
+export function clearCheckHighlight() {
+  const boardEl = document.getElementById("trainingBoard");
+  if (!boardEl) return;
+  boardEl.querySelectorAll(`.${CHECK_CLASS}`).forEach((el) => {
+    el.classList.remove(CHECK_CLASS);
+  });
+}
+ 
+/**
+ * Finds the square of the king for the given side by parsing the FEN
+ * piece-placement string. Returns e.g. "e1" or null if not found.
+ *
+ * @param {string} fen
+ * @param {"w"|"b"} turn  chess.js turn() value
+ * @returns {string|null}
+ */
+function findKingSquare(fen, turn) {
+  const kingChar = turn === "w" ? "K" : "k";
+  const placement = fen.split(" ")[0];
+  const rows = placement.split("/"); // rank 8 → rank 1
+ 
+  for (let rankIdx = 0; rankIdx < 8; rankIdx++) {
+    const rank = 8 - rankIdx; // FEN row 0 = rank 8
+    let file = 0;
+    for (const ch of rows[rankIdx]) {
+      if (ch >= "1" && ch <= "8") {
+        file += parseInt(ch, 10);
+      } else {
+        if (ch === kingChar) {
+          return String.fromCharCode(97 + file) + String(rank); // e.g. "e1"
+        }
+        file++;
+      }
+    }
+  }
+  return null;
+}
+
 /* ==========================================================================
    History-mode toast
    ========================================================================== */

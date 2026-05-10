@@ -24,6 +24,7 @@ import { bindPgnLoader } from "./pgn.js";
 import { bindCollapsible } from "./collapsible.js";
 import { renderHistory } from "./history.js";
 import { bindRightClickArrows, clearUserArrows } from "./board-arrows.js";
+import { openTrainAsPlayerModal } from "./training-player.js";
 
 
 window.addEventListener("load", () => {
@@ -64,6 +65,10 @@ window.addEventListener("load", () => {
   bindLichess();
   bindPgnLoader();
   bindCollapsible();
+
+  document.getElementById("trainingOnPlayerBtn")?.addEventListener("click", () => {
+    openTrainAsPlayerModal();
+  });
 
   // Initial render: empty tree, starting position analysis.
   renderHistory();

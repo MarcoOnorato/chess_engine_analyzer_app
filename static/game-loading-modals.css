@@ -1,0 +1,124 @@
+
+/* ==========================================================================
+    MODALS (Openings & Promotions)
+    ========================================================================== */
+.hidden {
+    display: none !important;
+}
+
+.modal {
+    position: fixed; z-index: 2000; left: 0; top: 0; width: 100%; height: 100%;
+    background: #101c38; display: flex; align-items: center; justify-content: center;
+}
+
+.modal-content {
+    background: #02050c; padding: 0; border-radius: 12px; width: 70%; max-height: 75%;
+    display: flex; flex-direction: column; border: 1px solid #02050c; color: white;
+}
+
+.modal-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 20px 25px 10px; border-bottom: 1px solid #02050c;
+}
+
+.modal-header h2 { margin: 0; font-size: 1.4em; }
+
+.search-container {
+    padding: 15px 25px;
+    border-bottom: 1px solid #02050c;
+}
+
+.search-input {
+    width: 100%;
+    padding: 10px;
+    border-radius: 4px;
+    background: #101c38;
+    color: white;
+    border: 1px solid #02050c;
+    font-family: inherit;
+    font-size: 1em;
+}
+
+.search-input:focus {
+    outline: none;
+    border-color: #26bbff;
+}
+
+#openingsList {
+    padding: 10px 25px 25px;
+    overflow-y: auto;
+}
+
+.opening-item {
+    padding: 12px; border-bottom: 1px solid #333; cursor: pointer;
+    display: flex; justify-content: space-between; transition: background 0.2s;
+}
+
+.opening-item:hover { background: #02050c; color: #26bbff; }
+.opening-name { font-weight: bold; }
+.opening-moves {
+    color: #8a99ad;
+    font-size: 0.85em;
+}
+.close-modal { background: none; border: none; color: #fff; font-size: 24px; cursor: pointer; padding: 0; }
+.close-modal:hover { color: #fff; background: none; }
+
+.promo-modal { position: fixed; z-index: 3000; left: 0; top: 0; width: 100%; height: 100%; background: #101c38; display: flex; align-items: center; justify-content: center;}
+.promo-dialog { background: #02050c; padding: 20px; border-radius: 8px; text-align: center; }
+.promo-title { margin-bottom: 15px; font-weight: bold; }
+.promo-piece { background: none; border: none; cursor: pointer; padding: 5px; border-radius: 4px;}
+.promo-piece:hover { background: #02050c; }
+.promo-piece img { width: 60px; height: 60px; }
+.promo-cancel { display: block; width: 100%; margin-top: 15px; padding: 10px; background: #101c38; color: white; border: none; border-radius: 4px; cursor: pointer;}
+
+.postgame-panel {
+    width: 100%;
+    margin-top: 15px;
+    padding: 10px 15px;
+}
+
+.accuracy-row-inline {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    background: #02050c;
+    border: 1px solid #02050c;
+    border-radius: 8px;
+    padding: 8px 15px;
+    margin-bottom: 12px;
+}
+
+.accuracy-inline {
+    font-size: 1.1em;
+    font-weight: bold;
+}
+
+.acc-label {
+    font-size: 0.85em;
+    background-color: #02050c;
+    color: #ebf8ff;
+    text-transform: uppercase;
+    margin-right: 5px;
+    font-weight: normal;
+}
+
+.white-text #whiteAccuracy { color: #26bbff; }
+.black-text #blackAccuracy { color: #f0c15c; }
+
+.chart-container {
+    width: 100%;
+    height: 15vh;
+}
+
+#evalChart {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+#pgnModal {
+    pointer-events: auto;
+}
+
+#pgnModal.hidden {
+    pointer-events: none;
+}

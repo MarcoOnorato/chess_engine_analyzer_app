@@ -6,6 +6,9 @@
 
 <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
 <link rel="stylesheet" href="static/style.css">
+<link rel="stylesheet" href="static/game-loading-modals.css">
+<link rel="stylesheet" href="static/training-modal.css">
+<link rel="stylesheet" href="static/training-player.css">
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
@@ -115,7 +118,11 @@
     <!-- Game Tree -->
     <div class="card history-panel">
       <div class="game-tree-header">
-        <h3>📜 Game <button id="trainingBtn" title="Start Training!" disabled>Start Training!</button></h3>
+        <h3>
+          📜 Game
+          <button id="trainingBtn" title="Train on this game" disabled>Train on this game</button>
+          <button id="trainingOnPlayerBtn" title="Train on this game">Train as a player</button>
+        </h3>
         
         <div class="tree-actions">
           <button id="promoteBtn" title="Promote variation to main line" disabled>⤴ Promote var</button>
