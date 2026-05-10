@@ -264,7 +264,7 @@ export function renderPositionList(controls) {
  *           skipScenario:()=>void,
  *           onNavigate:(type:string)=>void }} controls
  */
-export function renderPlayingScreen({ session, skipScenario, onNavigate }) {
+export function renderPlayingScreen({ session, skipScenario, onNavigate, onReplay }) {
   const root = body();
   const spec  = session.positions[session.currentPositionIdx];
 
@@ -341,7 +341,11 @@ export function renderPlayingScreen({ session, skipScenario, onNavigate }) {
               : `Moves played: <b id="trainingMovesPlayed">0</b> / ${session.config.depthK}`
             }
           </span>
-          <button id="skipBtn" class="tplay-skip-btn">Skip scenario</button>
+          <div class="tplay-action-btns">
+            <button id="replayBtn" class="tplay-replay-btn" title="Restart this scenario from scratch">↺ Replay</button>
+            <button id="skipBtn" class="tplay-skip-btn">Skip →</button>
+          </div>
+
         </div>
 
       </div>
@@ -354,6 +358,7 @@ export function renderPlayingScreen({ session, skipScenario, onNavigate }) {
   document.getElementById("navNext").onclick  = () => onNavigate("next");
   document.getElementById("navLast").onclick  = () => onNavigate("last");
   document.getElementById("skipBtn").onclick  = skipScenario;
+  document.getElementById("replayBtn").onclick = () => onReplay?.();
 
   // Keyboard shortcuts (arrow keys) — attach once, removed when modal closes
   const _keyHandler = (e) => {

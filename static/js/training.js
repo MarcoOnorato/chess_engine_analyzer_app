@@ -51,7 +51,8 @@ import {
   pickOpponentReply,
   playOpponentMove,
   resetBoardTo,
-  showHistoryToast,
+  highlightCheck,
+  clearCheckHighlight,
 } from "./training-board.js";
 import {
   clearHints,
@@ -101,6 +102,47 @@ export function openTrainingModal() {
   modal.classList.remove("hidden");
   goToPhase(PHASES.MODE_SELECT);
 }
+
+/**
+ * Opens the training modal pre-loaded with an externally assembled set of
+ * scenarios. Used by the "Train as a Player" pipeline which does its own
+ * game import and error classification before reaching the playing phase.
+ *
+ * @param {{ scenarios: ScenarioSpec[], userColor: "white"|"black", label: string }} opts
+ */
+export function openTrainingModalWithScenarios({ scenarios, userColor, label }) {
+  const modal = document.getElementById("trainingModal");
+  if (!modal) return;
+ 
+  session = createSession();
+  outcomes = [];
+ 
+  // Skip MODE_SELECT / CONFIG / POSITION_LIST:
+  // inject positions directly and jump to playing.
+  session.mode       = "error"; // closest semantic match; mode handler is barely used
+  session.userColor  = userColor;
+  session.positions  = scenarios;
+  session.currentPositionIdx = 0;
+ 
+  modal.classList.remove("hidden");
+ 
+  // Show a position list so the user can see what's coming.
+  setHeader(`${label} — ${scenarios.length} scenario(s)`, exitTraining);
+ 
+  // Re-use renderPositionList from training-ui.js with our injected scenarios.
+  // Import is already available in training.js via the existing import block.
+  renderPositionList({
+    session,
+    startScenario,
+    goBackConfig: () => {
+      // "Back" from the position list just closes the modal cleanly,
+      // since there's no config phase to return to in this flow.
+      exitTraining();
+    },
+  });
+}
+ 
+
 
 /* ==========================================================================
    Phase router
@@ -199,46 +241,48 @@ function prepareScenarios() {
 async function startScenario(idx) {
   session.currentPositionIdx = idx;
   resetPositionState(session);
-  session.mateDelivered = false; // reset per-scenario mate flag
+  session.mateDelivered = false;
   viewIndex = -1;
-
+  
   goToPhase(PHASES.PLAYING);
-  // The playing phase is rendered here (not inside goToPhase) so we can
-  // pass the live `session` reference that already has the correct idx.
   renderPlayingScreen({
     session,
     skipScenario,
     onNavigate: (type) => handleNavigation(type),
+    onReplay: () => startScenario(session.currentPositionIdx),
   });
-
+  
   const spec = session.positions[idx];
+  
+  // ── FIX ──────────────────────────────────────────────────────────────
+  // Per-scenario color override: "Train as a Player" scenarios carry the
+  // side the player had in that specific game. Without this, a scenario
+  // from a game where the player was Black would mount the board oriented
+  // toward White and block all piece dragging (wrong-turn guard fires).
+  if (spec.userColor) session.userColor = spec.userColor;
+  // ─────────────────────────────────────────────────────────────────────
+  
   session.fen = spec.fen;
-
-  // Tear down previous training board if any.
+  
   if (boardCtx) boardCtx.destroy();
-
-  // Wait one frame so the browser finishes laying out the freshly inserted
-  // DOM (the board host needs a real width before chessboard.js measures it).
+  
   await new Promise((r) => requestAnimationFrame(r));
-
+  
   boardCtx = mountTrainingBoard({
     fen: session.fen,
-    orientation: session.userColor,
+    orientation: session.userColor,   // now always correct for this scenario
     onUserMove: handleUserMove,
     isLive: () => viewIndex === -1,
   });
 
+  clearCheckHighlight();
   updateHistoryUI();
   setStatus("Fetching engine analysis…", { tone: "info" });
-
-  // Mode hook: WHAT-IF auto-plays opponent's "what if I'd been correct" move.
+  
   await getModeHandler(session.mode).onScenarioStart(session, { boardCtx });
-
-  // Resilience baseline = pre-move eval at this FEN.
   await primeBaselineAndExpected();
-
   promptUserToMove();
-}
+}  
 
 function filterMatePreservingMoves(moves) {
   if (!moves?.length) return [];
@@ -353,6 +397,7 @@ async function handleUserMove(uci, san, fenAfter) {
 
   session.fen = fenAfter;
   session.movesPlayed++;
+  highlightCheck(boardCtx.chess);
 
   const spec = session.positions[session.currentPositionIdx];
   if (spec.isMateScenario) {
@@ -434,6 +479,7 @@ async function playOpponentTurn() {
     session.fen = boardCtx.chess.fen();
     updateHistoryUI();
     setStatus(`Opponent: ${san}`, { tone: "info" });
+    highlightCheck(boardCtx.chess);
 
     await delay(600);
     await primeBaselineAndExpected();
@@ -454,6 +500,7 @@ function handleWrongMove(uci) {
   // Always rewind the board so the user faces the same position again.
   resetBoardTo(boardCtx, session.fen);
   clearHints(document.getElementById("trainingBoard"));
+  highlightCheck(boardCtx.chess);
 
   if (session.attempts === 1) {
     setStatus("Not the engine's choice. Try again.", { tone: "warning" });
@@ -699,6 +746,7 @@ function jumpToHistoryIndex(idx) {
 
   boardCtx.board.position(tempChess.fen());
   updateHistoryUI();
+  highlightCheck(tempChess);
 }
 
 /**
