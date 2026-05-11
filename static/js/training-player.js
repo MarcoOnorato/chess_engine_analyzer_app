@@ -111,11 +111,11 @@ function renderImportScreen() {
 
   // ── Platform selector ──────────────────────────────────────────────────
   const platformRow = el("div", "tap-platform-row");
-  let chosenPlatform = "lichess";
+  let chosenPlatform = "chesscom";
 
   const platforms = [
-    { id: "lichess",  label: "Lichess",   color: "#aaa" },
     { id: "chesscom", label: "Chess.com", color: "#69923e" },
+    { id: "lichess",  label: "Lichess",   color: "#aaa" },
   ];
 
   const platformBtns = {};
@@ -128,6 +128,9 @@ function renderImportScreen() {
       Object.values(platformBtns).forEach((pb) => pb.classList.remove("active"));
       b.classList.add("active");
       updateExtraFields();
+      const userInput = qs("#tap-username");
+      userInput?.focus();
+      userInput?.select();
     };
     platformBtns[id] = b;
     platformRow.appendChild(b);
@@ -135,23 +138,23 @@ function renderImportScreen() {
   wrap.appendChild(platformRow);
 
   // ── Username ───────────────────────────────────────────────────────────
-  wrap.appendChild(labeledInput("Username", "tap-username", "text", "Your username…"));
+  wrap.appendChild(labeledInput("Username", "tap-username", "text", "Your username…", true));
 
   // ── Count ─────────────────────────────────────────────────────────────
-  const countField = labeledInput("Number of games to fetch", "tap-count", "number", "10");
+  const countField = labeledInput("Number of games to fetch", "tap-count", "number", "5");
   countField.querySelector("input").min = "1";
   countField.querySelector("input").max = "50";
-  countField.querySelector("input").value = "15";
+  countField.querySelector("input").value = "5";
   wrap.appendChild(countField);
 
   // ── Chess.com extras (year + month) ────────────────────────────────────
   const extraWrap = el("div", "tap-extra-fields");
   const now = new Date();
 
-  const yearField  = labeledInput("Year",  "tap-cc-year",  "number", String(now.getFullYear()));
+  const yearField = labeledInput("Year",  "tap-cc-year",  "number", String(now.getFullYear()));
   const monthField = labeledInput("Month", "tap-cc-month", "number", String(now.getMonth() + 1));
-  yearField.querySelector("input").min  = "2000";
-  yearField.querySelector("input").max  = "2030";
+  yearField.querySelector("input").min = "1900";
+  yearField.querySelector("input").max = String(now.getFullYear());
   monthField.querySelector("input").min = "1";
   monthField.querySelector("input").max = "12";
   extraWrap.appendChild(yearField);
@@ -167,7 +170,7 @@ function renderImportScreen() {
   // ── Depth ─────────────────────────────────────────────────────────────
   const depthField = labeledInput("Engine depth", "tap-depth", "number", "12");
   depthField.querySelector("input").min = "8";
-  depthField.querySelector("input").max = "20";
+  depthField.querySelector("input").max = "30";
   wrap.appendChild(depthField);
 
   // ── Error message slot ────────────────────────────────────────────────
@@ -180,8 +183,8 @@ function renderImportScreen() {
   fetchBtn.onclick = async () => {
     errBox.classList.add("hidden");
     const username = qs("#tap-username")?.value?.trim();
-    const count    = parseInt(qs("#tap-count")?.value, 10) || 15;
-    const depth    = parseInt(qs("#tap-depth")?.value, 10) || 12;
+    const count = parseInt(qs("#tap-count")?.value, 10) || 5;
+    const depth = parseInt(qs("#tap-depth")?.value, 10) || 12;
 
     if (!username) { showErr(errBox, "Please enter a username."); return; }
 
@@ -271,7 +274,7 @@ function renderAnalysingScreen(depth) {
    Phase 3 — CATEGORY SELECTOR
    ═══════════════════════════════════════════════════════════════════════════ */
 
-function renderCategoryScreen() {
+export function renderCategoryScreen() {
   setHeader("Choose your training focus", closeModal);
   const root = body();
   root.innerHTML = "";
@@ -405,6 +408,7 @@ function launchCategory(catId) {
     label: catId
       ? CATEGORY_META[catId]?.label ?? "Player Training"
       : "Mixed Training",
+    onBack: renderCategoryScreen,
   });
 }
 
@@ -499,15 +503,23 @@ function qs(selector) {
   return document.querySelector(selector);
 }
 
-function labeledInput(labelText, id, type, placeholder) {
+function labeledInput(labelText, id, type, placeholder, autoFocus = false) {
   const wrap = el("div", "tap-field");
   const lbl  = el("label", "tap-label");
   lbl.textContent = labelText;
   lbl.htmlFor = id;
   const inp = el("input", "tap-input");
-  inp.id          = id;
-  inp.type        = type;
+  inp.id = id;
+  inp.type = type;
   inp.placeholder = placeholder;
+
+  if (autoFocus) {
+    requestAnimationFrame(() => {
+      inp.focus();
+      inp.select();
+    });
+  }
+
   wrap.appendChild(lbl);
   wrap.appendChild(inp);
   return wrap;
