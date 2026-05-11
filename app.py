@@ -11,8 +11,6 @@ import json
 import os
 from collections import OrderedDict
 from pathlib import Path
-import queue
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import chess
@@ -156,41 +154,60 @@ with app.app_context():
     load_openings_database()
 
 
-# --- ENGINE POOL ----------------------------------------------------------
+# --- SINGLE ENGINE + ANALYSIS CACHE --------------------------------------
+#
+# One engine instance runs sequentially.  The result of analysing position N
+# is stored in _last_analysis so that when the frontend asks for position N+1
+# (passing prev_fen == FEN of N) we can skip re-analysing the previous
+# position entirely and reuse the cached data.
+#
+# Cache entry shape:
+#   { "fen": str, "depth": int, "info": List[engine.InfoDict] }
+#
+# The cache is intentionally NOT thread-safe with locks because Flask's
+# development server is single-threaded; for production (gunicorn) use a
+# single worker or add a threading.Lock around reads/writes.
 
-ENGINE_POOL_SIZE = max(1, (os.cpu_count() or 2) // 2)
-_engine_pool: "queue.Queue[chess.engine.SimpleEngine]" = queue.Queue()
+import threading
+
+_engine: Optional[chess.engine.SimpleEngine] = None
+_engine_lock = threading.Lock()
+_last_analysis: Dict[str, Any] = {}   # keys: fen, depth, info
+
 
 def _create_engine() -> chess.engine.SimpleEngine:
     engine = chess.engine.SimpleEngine.popen_uci(str(STOCKFISH_PATH))
-    engine.configure({
-        "Threads": max(1, (os.cpu_count() or 2) // ENGINE_POOL_SIZE)
-    })
+    engine.configure({"Threads": max(1, (os.cpu_count() or 2) - 1)})
     return engine
 
-def init_engine_pool() -> None:
-    for _ in range(ENGINE_POOL_SIZE):
-        _engine_pool.put(_create_engine())
+
+def init_engine() -> None:
+    global _engine
+    _engine = _create_engine()
+
 
 def get_engine() -> chess.engine.SimpleEngine:
-    return _engine_pool.get()
+    """Returns the single shared engine instance (caller must hold _engine_lock)."""
+    global _engine
+    if _engine is None:
+        _engine = _create_engine()
+    return _engine
 
-def release_engine(engine: chess.engine.SimpleEngine) -> None:
-    _engine_pool.put(engine)
 
 @atexit.register
-def _close_engine_pool() -> None:
-    while not _engine_pool.empty():
+def _close_engine() -> None:
+    global _engine
+    if _engine is not None:
         try:
-            eng = _engine_pool.get_nowait()
-            eng.quit()
+            _engine.quit()
         except Exception:
             pass
+        _engine = None
 
 
-# init pool at startup
+# init engine at startup
 with app.app_context():
-    init_engine_pool()
+    init_engine()
 
 
 # --- MOVE CLASSIFICATION --------------------------------------------------
@@ -374,32 +391,33 @@ def analyze() -> Response:
 
     limit = chess.engine.Limit(depth=depth)
 
-    # --- PARALLEL EXECUTION ---
-    def analyze_current():
+    # --- SINGLE ENGINE, SEQUENTIAL + CACHE ---
+    # If the caller provides prev_fen and we have a cached analysis for it
+    # at the same (or higher) depth, we skip re-analysing the previous
+    # position entirely.  Then we analyse the current position and store
+    # the result for the *next* request.
+    with _engine_lock:
         engine = get_engine()
-        try:
-            info = engine.analyse(board, limit, multipv=3)
-            return info
-        finally:
-            release_engine(engine)
 
-    def analyze_prev():
-        if not prev_fen:
-            return None
-        engine = get_engine()
-        try:
-            prev_board = chess.Board(prev_fen)
-            info = engine.analyse(prev_board, limit, multipv=3)
-            return info
-        finally:
-            release_engine(engine)
+        # Resolve previous-position analysis from cache or fresh engine call.
+        prev_info_list: Optional[List[Any]] = None
+        if prev_fen:
+            cached = _last_analysis
+            if (
+                cached.get("fen") == prev_fen
+                and cached.get("depth", 0) >= depth
+            ):
+                prev_info_list = cached["info"]
+            else:
+                prev_board = chess.Board(prev_fen)
+                prev_info_list = engine.analyse(prev_board, limit, multipv=3)
 
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        future_curr = executor.submit(analyze_current)
-        future_prev = executor.submit(analyze_prev)
+        # Analyse current position.
+        info_list = engine.analyse(board, limit, multipv=3)
 
-        info_list = future_curr.result()
-        prev_info_list = future_prev.result()
+    # Cache the current analysis for the next request.
+    _last_analysis.clear()
+    _last_analysis.update({"fen": fen, "depth": depth, "info": info_list})
 
     # --- CURRENT POSITION ---
     top_moves = extract_top_moves(info_list, board)
