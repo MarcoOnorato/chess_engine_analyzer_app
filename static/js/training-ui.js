@@ -156,7 +156,7 @@ export function renderConfigScreen(controls) {
   footer.className = "training-config-footer";
   const back = document.createElement("button");
   back.textContent = "← Back";
-  back.onclick = () => controls.applyConfig({ phase: PHASES.MODE_SELECT });
+  back.onclick = () => controls.goToModeSelect();
   const next = document.createElement("button");
   next.className = "training-cta";
   next.textContent = "Prepare scenarios →";
@@ -264,7 +264,7 @@ export function renderPositionList(controls) {
  *           skipScenario:()=>void,
  *           onNavigate:(type:string)=>void }} controls
  */
-export function renderPlayingScreen({ session, skipScenario, onNavigate, onReplay }) {
+export function renderPlayingScreen({ session, skipScenario, onNavigate, onReplay, onBackToList }) {
   const root = body();
   const spec  = session.positions[session.currentPositionIdx];
 
@@ -342,6 +342,7 @@ export function renderPlayingScreen({ session, skipScenario, onNavigate, onRepla
             }
           </span>
           <div class="tplay-action-btns">
+            <button id="backToListBtn" class="tplay-back-list-btn">← Scenarios</button>
             <button id="replayBtn" class="tplay-replay-btn" title="Restart this scenario from scratch">↺ Replay</button>
             <button id="skipBtn" class="tplay-skip-btn">Skip →</button>
           </div>
@@ -359,6 +360,7 @@ export function renderPlayingScreen({ session, skipScenario, onNavigate, onRepla
   document.getElementById("navLast").onclick  = () => onNavigate("last");
   document.getElementById("skipBtn").onclick  = skipScenario;
   document.getElementById("replayBtn").onclick = () => onReplay?.();
+  document.getElementById("backToListBtn").onclick = () => onBackToList?.();
 
   // Keyboard shortcuts (arrow keys) — attach once, removed when modal closes
   const _keyHandler = (e) => {

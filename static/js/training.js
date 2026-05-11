@@ -68,6 +68,7 @@ let boardCtx = null;
 
 /** Outcomes accumulated as scenarios are completed. */
 let outcomes = [];
+let positionListBackDest = "config";
 
 /**
  * Navigable history cursor.
@@ -110,7 +111,7 @@ export function openTrainingModal() {
  *
  * @param {{ scenarios: ScenarioSpec[], userColor: "white"|"black", label: string }} opts
  */
-export function openTrainingModalWithScenarios({ scenarios, userColor, label }) {
+export function openTrainingModalWithScenarios({ scenarios, userColor, label, onBack }) {
   const modal = document.getElementById("trainingModal");
   if (!modal) return;
  
@@ -135,9 +136,11 @@ export function openTrainingModalWithScenarios({ scenarios, userColor, label }) 
     session,
     startScenario,
     goBackConfig: () => {
-      // "Back" from the position list just closes the modal cleanly,
-      // since there's no config phase to return to in this flow.
-      exitTraining();
+      if (typeof onBack === "function") {
+        onBack();
+      } else {
+        exitTraining();
+      }
     },
   });
 }
@@ -161,13 +164,17 @@ function goToPhase(phase) {
         session,
         applyConfig,
         goToPositionList: prepareScenarios,
+        goToModeSelect: () => goToPhase(PHASES.MODE_SELECT),
       });
       break;
     case PHASES.POSITION_LIST:
       renderPositionList({
         session,
         startScenario,
-        goBackConfig: () => goToPhase(PHASES.CONFIG),
+        goBackConfig: positionListBackDest === "exit"
+          ? exitTrainingNoConfirm  // came from playing screen
+          : () => goToPhase(PHASES.CONFIG),
+
       });
       break;
     case PHASES.PLAYING:
@@ -231,6 +238,7 @@ function prepareScenarios() {
 
   session.positions = positions;
   session.currentPositionIdx = 0;
+  positionListBackDest = "config";
   goToPhase(PHASES.POSITION_LIST);
 }
 
@@ -250,6 +258,7 @@ async function startScenario(idx) {
     skipScenario,
     onNavigate: (type) => handleNavigation(type),
     onReplay: () => startScenario(session.currentPositionIdx),
+    onBackToList: goToScenarioList,
   });
   
   const spec = session.positions[idx];
@@ -284,43 +293,106 @@ async function startScenario(idx) {
   promptUserToMove();
 }  
 
-function filterMatePreservingMoves(moves) {
+/**
+ * Filters the engine's top-moves list down to moves that are genuinely
+ * acceptable at this position — used for both move validation and hints.
+ *
+ * All scores and mate values are WHITE POV:
+ *   score > 0 / mate > 0  → good for white, bad for black
+ *   score < 0 / mate < 0  → good for black, bad for white
+ *
+ * @param {Array<{uci:string, san:string, score:number|null, mate:number|null}>} moves
+ *   Engine top-moves, index 0 = best, already in descending quality order
+ *   (the backend sorts them: if white to move, highest score first;
+ *    if black to move, lowest score first — i.e. move[0] is always best
+ *    for whoever is to move).
+ * @param {{ cpTolerance: number }} config
+ * @param {"white"|"black"} userColor  The side currently to move.
+ * @returns {Array} Filtered subset — never empty if `moves` was non-empty.
+ */
+function filterAcceptableMoves(moves, config, userColor) {
   if (!moves?.length) return [];
-
-  // mate lines
-  const mateMoves = moves.filter(m => m.mate != null);
-
-  if (mateMoves.length === 0) {
-    return moves;
+ 
+  // Determine which direction is "good" for the side to move.
+  // White wants higher scores/mates; black wants lower (more negative).
+  const isWhite = userColor === "white";
+ 
+  // ── Stage 1: Mate handling ──────────────────────────────────────────────
+  //
+  // A move is a "winning mate" for the side to move when:
+  //   white to move: mate > 0   (white mates)
+  //   black to move: mate < 0   (black mates)
+  //
+  // A move is a "losing mate" (opponent mates us) when:
+  //   white to move: mate < 0
+  //   black to move: mate > 0
+ 
+  const isWinningMate = (m) =>
+    m.mate != null && (isWhite ? m.mate > 0 : m.mate < 0);
+ 
+  const isLosingMate = (m) =>
+    m.mate != null && (isWhite ? m.mate < 0 : m.mate > 0);
+ 
+  const winningMates = moves.filter(isWinningMate);
+  const losingMates  = moves.filter(isLosingMate);
+  const normalMoves  = moves.filter((m) => m.mate == null);
+ 
+  // If any move delivers a forced mate for us, keep only the shortest.
+  if (winningMates.length > 0) {
+    // Shortest mate: white wants smallest positive mate; black wants largest
+    // negative mate (closest to 0 in absolute value, i.e. least negative).
+    const best = isWhite
+      ? Math.min(...winningMates.map((m) => m.mate))   // e.g. +2 beats +5
+      : Math.max(...winningMates.map((m) => m.mate));   // e.g. -2 beats -5
+    return winningMates.filter((m) => m.mate === best);
   }
-
-  /*
-    Stockfish:
-    +N -> mate for the side to move
-    -N -> mate if the side to move is gonna be mated
-
-    POSITIVE = shorter mate
-    NEGATIVE = delay mate for the most possible amount of moves
-  */
-
-  const bestMate = mateMoves.reduce((best, move) => {
-    if (best == null) return move.mate;
-
-    // Winning mate
-    if (move.mate > 0 && best > 0) {
-      return Math.min(best, move.mate);
-    }
-
-    // Losing Mate
-    if (move.mate < 0 && best < 0) {
-      return Math.max(best, move.mate);
-    }
-
-    // Edge cases
-    return best;
-  }, null);
-
-  return mateMoves.filter(m => m.mate === bestMate);
+ 
+  // If all available moves walk into a losing mate, keep the one that
+  // delays it the longest (furthest from 0).
+  if (normalMoves.length === 0 && losingMates.length > 0) {
+    const longest = isWhite
+      ? Math.max(...losingMates.map((m) => m.mate))   // least negative = longest delay for white
+      : Math.min(...losingMates.map((m) => m.mate));   // most negative = longest delay for black
+    return losingMates.filter((m) => m.mate === longest);
+  }
+ 
+  // If some moves are normal and some are losing mates, drop the losing mates:
+  // playing a normal move is always better than stepping into forced mate.
+  const candidates = normalMoves.length > 0 ? normalMoves : moves.slice(0, 1);
+ 
+  // ── Stage 2: Quality gate for normal positions ──────────────────────────
+ 
+  const best = candidates[0];
+  if (best.score == null) return candidates; // no score info, return as-is
+ 
+  // HARD_DELTA_PAWNS: maximum allowed deviation from the best move.
+  // 1.0 pawn catches the reported bug (move going from −2.0 to +0.5 = Δ2.5).
+  const HARD_DELTA_PAWNS = 1.0;
+ 
+  // SIGN_FLIP_BUFFER: if the best move clearly wins (|score| > buffer),
+  // reject any move that flips the advantage to the opponent.
+  const SIGN_FLIP_BUFFER = 0.3;
+ 
+  const filtered = candidates.filter((m, idx) => {
+    if (idx === 0) return true;
+    if (m.score == null) return false;
+ 
+    const delta = Math.abs(best.score - m.score);
+ 
+    // Hard delta gate.
+    if (delta > HARD_DELTA_PAWNS) return false;
+ 
+    // Sign-flip gate.
+    if (best.score > SIGN_FLIP_BUFFER && m.score < 0) return false;
+    if (best.score < -SIGN_FLIP_BUFFER && m.score > 0) return false;
+ 
+    // Soft cpTolerance gate (× 3 so the config knob stays useful for tuning).
+    if (delta * 100 > (config?.cpTolerance ?? 30) * 3) return false;
+ 
+    return true;
+  });
+ 
+  return filtered.length > 0 ? filtered : [candidates[0]];
 }
 
 /**
@@ -330,7 +402,7 @@ function filterMatePreservingMoves(moves) {
 async function primeBaselineAndExpected() {
   try {
     const data = await fetchEngineMoves(session.fen);
-    session.expectedTopMoves = filterMatePreservingMoves(data.top_moves || []);
+    session.expectedTopMoves = filterAcceptableMoves(data.top_moves || [], session.config);
     setEvalBar(data.eval, data.eval_mate);
     if (session.baselineEval == null) {
       session.baselineEval = signedForUser(data.eval);
@@ -614,6 +686,36 @@ function skipScenario() {
   }
 }
 
+/**
+ * Returns to the position list without discarding the already-computed
+ * scenario list or the current session score.
+ *
+ * Safe to call from PLAYING at any point — even mid-move, because the
+ * engine calls are async and the boardCtx.destroy() tears down the board
+ * before any further callbacks can fire.
+ */
+function goToScenarioList() {
+  // Clean up the keyboard listener that renderPlayingScreen attached.
+  const modalBody = document.getElementById("trainingModalBody");
+  if (modalBody?._keyHandler) {
+    document.removeEventListener("keydown", modalBody._keyHandler);
+    modalBody._keyHandler = null;
+  }
+ 
+  // Tear down the training board.
+  if (boardCtx) {
+    boardCtx.destroy();
+    boardCtx = null;
+  }
+ 
+  // Reset the history cursor (it's per-scenario, meaningless in list view).
+  viewIndex = -1;
+ 
+  // Go back to the list — positions and score are untouched.
+  positionListBackDest = "exit";
+  goToPhase(PHASES.POSITION_LIST);
+}
+
 /* ==========================================================================
    Exit
    ========================================================================== */
@@ -641,6 +743,28 @@ function exitTraining() {
   outcomes = [];
   session = null;
 
+  const modal = document.getElementById("trainingModal");
+  if (modal) modal.classList.add("hidden");
+}
+
+/**
+ * Exits the training modal without the "are you sure?" confirmation.
+ * Used when the user is already on the position list (not mid-scenario)
+ * and clicks "← Back" to return to the main review.
+ */
+function exitTrainingNoConfirm() {
+  const modalBody = document.getElementById("trainingModalBody");
+  if (modalBody?._keyHandler) {
+    document.removeEventListener("keydown", modalBody._keyHandler);
+    modalBody._keyHandler = null;
+  }
+  if (boardCtx) {
+    boardCtx.destroy();
+    boardCtx = null;
+  }
+  outcomes = [];
+  session  = null;
+  positionListBackDest = "config"; // reset for next time
   const modal = document.getElementById("trainingModal");
   if (modal) modal.classList.add("hidden");
 }

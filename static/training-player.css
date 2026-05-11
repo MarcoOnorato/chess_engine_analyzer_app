@@ -334,3 +334,21 @@
 .tap-back-btn:hover {
     color: #aaa;
 }
+
+.tplay-back-list-btn {
+    padding: 6px 13px;
+    border-radius: 5px;
+    border: 1px solid #333;
+    background: transparent;
+    color: #778;
+    font-size: 0.82em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+    white-space: nowrap;
+}
+
+.tplay-back-list-btn:hover {
+    color: #aaa;
+    border-color: #555;
+}
