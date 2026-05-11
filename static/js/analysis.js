@@ -11,7 +11,7 @@
  *   - Updating the opening name display when the backend recognizes one.
  */
 
-import { state } from "./state.js";
+import { state, findChildByUci, indexNode, nextNodeId } from "./state.js";
 import { api } from "./api.js";
 import { playMoveUci, playAlternativeMove } from "./moves.js";
 
@@ -240,6 +240,70 @@ function sqToXY(sq, sqSize, orient) {
 }
 
 /**
+ * Injects engine alternative moves as variation nodes into the game tree.
+ *
+ * When the backend returns `alternative_moves` (the top engine moves from
+ * the *previous* position), we add each one as a child of `parentNode` so
+ * it appears in the tree as a variation — without triggering a board
+ * navigation. Moves that already exist as children (same UCI) are skipped
+ * so re-visiting a position never produces duplicates.
+ *
+ * @param {import("./state.js").Node} parentNode - The node *before* the move
+ *   that was just played (i.e. `state.currentNode.parent`, or `state.root`
+ *   when we're at the first move).
+ * @param {Array<{uci: string, san: string, score: number|null, mate: number|null}>} altMoves
+ *   The filtered alternative moves returned by the backend.
+ * @param {string} currentUci - UCI of the move that was actually played
+ *   (used to skip it, since it is already the main-line child).
+ */
+function injectAlternatives(parentNode, altMoves, currentUci) {
+  if (!parentNode || !altMoves || altMoves.length === 0) return;
+
+  let treeChanged = false;
+
+  for (const alt of altMoves) {
+    // Skip the move that was actually played — it's already in the tree.
+    if (alt.uci === currentUci) continue;
+    // Skip if already a child (exact UCI match).
+    if (findChildByUci(parentNode, alt.uci)) continue;
+
+    // Build the position after this alternative move.
+    try {
+      const chess = new Chess(parentNode.fenAfter);
+      const moveObj = chess.move({ from: alt.uci.slice(0, 2), to: alt.uci.slice(2, 4), promotion: alt.uci[4] || undefined });
+      if (!moveObj) continue;
+
+      const newNode = {
+        id: nextNodeId(),
+        parent: parentNode,
+        children: [],
+        san: alt.san || moveObj.san,
+        uci: alt.uci,
+        fenBefore: parentNode.fenAfter,
+        fenAfter: chess.fen(),
+        ply: parentNode.ply + 1,
+        evalData: null,
+        cpLoss: null,
+        eval: alt.score ?? null,
+        eval_mate: alt.mate ?? null,
+      };
+
+      parentNode.children.push(newNode);
+      indexNode(newNode);
+      treeChanged = true;
+    } catch (_) {
+      // Ignore illegal moves silently.
+    }
+  }
+
+  if (treeChanged) {
+    // Lazy import to avoid circular deps — renderHistory is in history.js
+    // which already imports from analysis.js indirectly.
+    import("./history.js").then(({ renderHistory }) => renderHistory());
+  }
+}
+
+/**
  * Asks the backend for a full analysis and updates the UI.
  * Now includes filtering logic to hide moves that are significantly worse 
  * than the top engine choice.
@@ -301,6 +365,12 @@ export async function analyzeCurrentPosition(
     // Filter both Top Moves and Alternative Moves
     const filteredTopMoves = filterMoves(data.top_moves);
     const filteredAltMoves = filterMoves(data.alternative_moves);
+
+    // Inject alternatives into the game tree as variation nodes.
+    // parentNode is the node *before* the move just played.
+    if (last_move_uci && state.currentNode && state.currentNode.parent) {
+      injectAlternatives(state.currentNode.parent, filteredAltMoves, last_move_uci);
+    }
 
     // Update state and UI with filtered data
     state.topMovesCache = filteredTopMoves;
