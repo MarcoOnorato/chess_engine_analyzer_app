@@ -352,3 +352,67 @@
     color: #aaa;
     border-color: #555;
 }
+
+/* ── Always-visible hint panel ───────────────────────────────────────────── */
+
+.training-hint-panel {
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.training-hint-panel-inner {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    font-size: 0.85em;
+    line-height: 1.5;
+    transition: background 0.2s, border-color 0.2s;
+}
+
+.training-hint-icon {
+    font-size: 1em;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+
+.training-hint-text {
+    color: #ccc;
+}
+
+.training-hint-text b {
+    color: #fff;
+    font-weight: 700;
+}
+
+/* Idle state — subtle, unobtrusive */
+.hint-idle {
+    background: rgba(255, 255, 255, 0.03);
+    border-color: #1e2a3a;
+}
+
+.hint-idle .training-hint-text {
+    color: #556;
+}
+
+/* Squares highlighted — orange warning tone */
+.hint-squares {
+    background: rgba(230, 145, 44, 0.08);
+    border-color: rgba(230, 145, 44, 0.35);
+}
+
+.hint-squares .training-hint-text {
+    color: #e6a84a;
+}
+
+/* Arrows shown — cyan info tone */
+.hint-arrows {
+    background: rgba(38, 187, 255, 0.08);
+    border-color: rgba(38, 187, 255, 0.35);
+}
+
+.hint-arrows .training-hint-text {
+    color: #8adeff;
+}

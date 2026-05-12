@@ -213,14 +213,22 @@ function classifyError(node, userColor, mainLine) {
     }
   }
 
-  // 3. Missed capture — the user could have taken something but didn't,
-  //    and the best engine move at THIS position is a recapture or the
-  //    opponent just took something. Simpler proxy: the user's move is NOT
-  //    a capture but the best engine move IS, and cp-loss is significant.
-  if (node.topMoves?.length > 0) {
-    const bestHere = node.topMoves[0];
+  // 3. Missed capture — the user didn't take something that was available
+  //    *before* their move, i.e. the engine's best move FROM THE PARENT
+  //    position is a capture and the user played something else.
+  //    We intentionally check parent.topMoves (not node.topMoves) so that
+  //    the scenario FEN (parent.fenAfter) and the hint arrows both line up
+  //    with a move that IS a capture from that starting position.
+  if (parent.topMoves?.length > 0) {
+    const bestFromParent = parent.topMoves[0];
     const userMoveIsCapture = node.san?.includes("x");
-    if (!userMoveIsCapture && bestHere?.san?.includes("x") && node.cpLoss >= CP_ERROR_MIN) {
+    if (
+      !userMoveIsCapture &&
+      bestFromParent &&
+      bestFromParent.uci !== node.uci &&
+      bestFromParent.san?.includes("x") &&
+      node.cpLoss >= CP_ERROR_MIN
+    ) {
       return PLAYER_ERROR_TYPES.MISSED_CAPTURE;
     }
   }

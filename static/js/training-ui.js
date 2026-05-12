@@ -264,7 +264,7 @@ export function renderPositionList(controls) {
  *           skipScenario:()=>void,
  *           onNavigate:(type:string)=>void }} controls
  */
-export function renderPlayingScreen({ session, skipScenario, onNavigate, onReplay, onBackToList }) {
+export function renderPlayingScreen({ session, skipScenario, onNavigate, onReplay, onBackToList, onRequestHint }) {
   const root = body();
   const spec  = session.positions[session.currentPositionIdx];
 
@@ -316,13 +316,17 @@ export function renderPlayingScreen({ session, skipScenario, onNavigate, onRepla
             Loading…
           </div>
 
-          <!-- "Want a hint?" prompt (hidden by default) -->
-          <div id="trainingHintBox" class="training-hint-box hidden" style="margin-top:12px">
-            <div style="font-size:0.9em; color:#f0c15c;">💡 Want a hint? Arrows will be drawn for the best moves.</div>
-            <div class="training-hint-actions">
-              <button id="trainingHintNo"  style="border-color:#555; color:#aaa;">No thanks</button>
-              <button id="trainingHintYes" class="training-cta">Show hint</button>
+          <!-- Always-visible hint panel (state driven by orchestrator) -->
+          <div id="trainingHintPanel" class="training-hint-panel" style="margin-top:12px">
+            <div class="training-hint-panel-inner hint-idle">
+              <span class="training-hint-icon">💡</span>
+              <span class="training-hint-text">Play a move to begin.</span>
             </div>
+          </div>
+
+          <!-- Hint button: requests the next hint level from the orchestrator -->
+          <div style="margin-top:8px; text-align:right;">
+            <button id="requestHintBtn" class="tplay-replay-btn" title="Request a hint">💡 Hint</button>
           </div>
         </div>
 
@@ -361,6 +365,7 @@ export function renderPlayingScreen({ session, skipScenario, onNavigate, onRepla
   document.getElementById("skipBtn").onclick  = skipScenario;
   document.getElementById("replayBtn").onclick = () => onReplay?.();
   document.getElementById("backToListBtn").onclick = () => onBackToList?.();
+  document.getElementById("requestHintBtn").onclick = () => onRequestHint?.();
 
   // Keyboard shortcuts (arrow keys) — attach once, removed when modal closes
   const _keyHandler = (e) => {
@@ -415,11 +420,18 @@ export function setMateMovesLeft(n) {
  * Updates the training eval bar.
  * @param {number|null} score  Engine eval in pawns (white POV).
  * @param {number|null} mate   Mate-in-N (positive = white winning).
+ * @param {"white"|"black"} [userColor="white"]  Current player's side.
  */
-export function setEvalBar(score, mate = null) {
+export function setEvalBar(score, mate = null, userColor = "white") {
   const fill = document.getElementById("trainingEvalFill");
   const txt  = document.getElementById("trainingEvalText");
+  const bar  = document.getElementById("trainingEvalBar");
   if (!fill || !txt) return;
+
+  // Flip bar direction for black: black advantage fills from top.
+  if (bar) {
+    bar.style.flexDirection = userColor === "black" ? "column" : "column-reverse";
+  }
 
   if (mate != null) {
     txt.textContent = mate > 0 ? `M${mate}` : `-M${Math.abs(mate)}`;
@@ -437,27 +449,47 @@ export function setEvalBar(score, mate = null) {
 }
 
 /**
- * Reveals the "want a hint?" prompt; wires its two buttons.
- * @param {() => void} onYes
- * @param {() => void} onNo
+ * Updates the always-visible hint panel.
+ *
+ * @param {"idle"|"squares"|"arrows"} level
+ * @param {Array<{from:string,to:string,san:string}>} moves  Acceptable engine moves.
+ * @param {"white"|"black"} _userColor  Unused here but kept for API symmetry.
  */
-export function showHintPrompt(onYes, onNo) {
-  const box = document.getElementById("trainingHintBox");
-  if (!box) return;
-  box.classList.remove("hidden");
-  document.getElementById("trainingHintYes").onclick = () => {
-    box.classList.add("hidden");
-    onYes();
-  };
-  document.getElementById("trainingHintNo").onclick = () => {
-    box.classList.add("hidden");
-    onNo();
-  };
-}
+export function setHintPanel(level, moves, _userColor) {
+  const panel = document.getElementById("trainingHintPanel");
+  if (!panel) return;
 
-export function hideHintPrompt() {
-  const box = document.getElementById("trainingHintBox");
-  if (box) box.classList.add("hidden");
+  const inner = panel.querySelector(".training-hint-panel-inner");
+  if (!inner) return;
+
+  // Remove all state classes.
+  inner.classList.remove("hint-idle", "hint-squares", "hint-arrows");
+
+  switch (level) {
+    case "squares":
+      inner.classList.add("hint-squares");
+      inner.innerHTML = `
+        <span class="training-hint-icon">💡</span>
+        <span class="training-hint-text">
+          Suggested moves: highlighted squares show which pieces to consider.
+        </span>`;
+      break;
+    case "arrows":
+      inner.classList.add("hint-arrows");
+      inner.innerHTML = `
+        <span class="training-hint-icon">🎯</span>
+        <span class="training-hint-text">
+          Arrows on the board show the best move${moves.length > 1 ? "s" : ""}.
+          ${moves.length ? moves.map((m) => `<b>${escapeHtml(m.san || "")}</b>`).join(", ") : ""}
+        </span>`;
+      break;
+    default: // "idle"
+      inner.classList.add("hint-idle");
+      inner.innerHTML = `
+        <span class="training-hint-icon">💡</span>
+        <span class="training-hint-text">Play a move — hints appear here if needed.</span>`;
+      break;
+  }
 }
 
 /**
