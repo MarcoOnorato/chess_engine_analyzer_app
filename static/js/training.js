@@ -40,8 +40,7 @@ import {
   setMovesPlayed,
   setMateMovesLeft,
   setEvalBar,
-  showHintPrompt,
-  hideHintPrompt,
+  setHintPanel,
   renderTrainingHistory,
 } from "./training-ui.js";
 import {
@@ -259,6 +258,7 @@ async function startScenario(idx) {
     onNavigate: (type) => handleNavigation(type),
     onReplay: () => startScenario(session.currentPositionIdx),
     onBackToList: goToScenarioList,
+    onRequestHint: handleHintRequest,
   });
   
   const spec = session.positions[idx];
@@ -289,124 +289,117 @@ async function startScenario(idx) {
   setStatus("Fetching engine analysis…", { tone: "info" });
   
   await getModeHandler(session.mode).onScenarioStart(session, { boardCtx });
+  // Highlight check after onScenarioStart (which may play an opponent move),
+  // so a king already in check at the scenario start gets the red ring.
+  highlightCheck(boardCtx.chess);
   await primeBaselineAndExpected();
   promptUserToMove();
-}  
+}
 
 /**
  * Filters the engine's top-moves list down to moves that are genuinely
  * acceptable at this position — used for both move validation and hints.
  *
- * All scores and mate values are WHITE POV:
- *   score > 0 / mate > 0  → good for white, bad for black
- *   score < 0 / mate < 0  → good for black, bad for white
+ * For mate scenarios, only moves that continue the *shortest* forced mate
+ * line are accepted (i.e. winning mates with the minimum mate distance).
+ * This prevents the user from playing any mating move and then drifting
+ * into a longer mating line instead of the intended one.
  *
  * @param {Array<{uci:string, san:string, score:number|null, mate:number|null}>} moves
- *   Engine top-moves, index 0 = best, already in descending quality order
- *   (the backend sorts them: if white to move, highest score first;
- *    if black to move, lowest score first — i.e. move[0] is always best
- *    for whoever is to move).
  * @param {{ cpTolerance: number }} config
- * @param {"white"|"black"} userColor  The side currently to move.
- * @returns {Array} Filtered subset — never empty if `moves` was non-empty.
+ * @param {"white"|"black"} userColor
+ * @param {boolean} [isMateScenario=false]
+ * @returns {Array}
  */
-function filterAcceptableMoves(moves, config, userColor) {
+function filterAcceptableMoves(moves, config, userColor, isMateScenario = false) {
   if (!moves?.length) return [];
- 
-  // Determine which direction is "good" for the side to move.
-  // White wants higher scores/mates; black wants lower (more negative).
+
   const isWhite = userColor === "white";
- 
-  // ── Stage 1: Mate handling ──────────────────────────────────────────────
-  //
-  // A move is a "winning mate" for the side to move when:
-  //   white to move: mate > 0   (white mates)
-  //   black to move: mate < 0   (black mates)
-  //
-  // A move is a "losing mate" (opponent mates us) when:
-  //   white to move: mate < 0
-  //   black to move: mate > 0
- 
+
   const isWinningMate = (m) =>
     m.mate != null && (isWhite ? m.mate > 0 : m.mate < 0);
- 
+
   const isLosingMate = (m) =>
     m.mate != null && (isWhite ? m.mate < 0 : m.mate > 0);
- 
+
   const winningMates = moves.filter(isWinningMate);
   const losingMates  = moves.filter(isLosingMate);
   const normalMoves  = moves.filter((m) => m.mate == null);
- 
-  // If any move delivers a forced mate for us, keep only the shortest.
+
   if (winningMates.length > 0) {
-    // Shortest mate: white wants smallest positive mate; black wants largest
-    // negative mate (closest to 0 in absolute value, i.e. least negative).
+    // Shortest winning mate for the side to move.
     const best = isWhite
-      ? Math.min(...winningMates.map((m) => m.mate))   // e.g. +2 beats +5
-      : Math.max(...winningMates.map((m) => m.mate));   // e.g. -2 beats -5
+      ? Math.min(...winningMates.map((m) => m.mate))
+      : Math.max(...winningMates.map((m) => m.mate));
+
+    if (isMateScenario) {
+      // Strict: only the exact shortest mate distance is accepted.
+      // This ensures the user stays on the intended mating line and
+      // cannot "solve" a Mate-in-2 by stumbling into a Mate-in-5.
+      return winningMates.filter((m) => m.mate === best);
+    }
+
+    // Normal (non-mate) scenario: accept shortest mate only.
     return winningMates.filter((m) => m.mate === best);
   }
- 
-  // If all available moves walk into a losing mate, keep the one that
-  // delays it the longest (furthest from 0).
+
+  // All moves walk into a losing mate — keep the one that delays it longest.
   if (normalMoves.length === 0 && losingMates.length > 0) {
     const longest = isWhite
-      ? Math.max(...losingMates.map((m) => m.mate))   // least negative = longest delay for white
-      : Math.min(...losingMates.map((m) => m.mate));   // most negative = longest delay for black
+      ? Math.max(...losingMates.map((m) => m.mate))
+      : Math.min(...losingMates.map((m) => m.mate));
     return losingMates.filter((m) => m.mate === longest);
   }
- 
-  // If some moves are normal and some are losing mates, drop the losing mates:
-  // playing a normal move is always better than stepping into forced mate.
+
   const candidates = normalMoves.length > 0 ? normalMoves : moves.slice(0, 1);
- 
-  // ── Stage 2: Quality gate for normal positions ──────────────────────────
- 
+
+  // For mate scenarios with no winning-mate moves available (shouldn't normally
+  // happen if the position was correctly identified), fall back to strict top-1.
+  if (isMateScenario) {
+    return [candidates[0]];
+  }
+
   const best = candidates[0];
-  if (best.score == null) return candidates; // no score info, return as-is
- 
-  // HARD_DELTA_PAWNS: maximum allowed deviation from the best move.
-  // 1.0 pawn catches the reported bug (move going from −2.0 to +0.5 = Δ2.5).
+  if (best.score == null) return candidates;
+
   const HARD_DELTA_PAWNS = 1.0;
- 
-  // SIGN_FLIP_BUFFER: if the best move clearly wins (|score| > buffer),
-  // reject any move that flips the advantage to the opponent.
   const SIGN_FLIP_BUFFER = 0.3;
- 
+
   const filtered = candidates.filter((m, idx) => {
     if (idx === 0) return true;
     if (m.score == null) return false;
- 
+
     const delta = Math.abs(best.score - m.score);
- 
-    // Hard delta gate.
+
     if (delta > HARD_DELTA_PAWNS) return false;
- 
-    // Sign-flip gate.
+
     if (best.score > SIGN_FLIP_BUFFER && m.score < 0) return false;
     if (best.score < -SIGN_FLIP_BUFFER && m.score > 0) return false;
- 
-    // Soft cpTolerance gate (× 3 so the config knob stays useful for tuning).
+
     if (delta * 100 > (config?.cpTolerance ?? 30) * 3) return false;
- 
+
     return true;
   });
- 
+
   return filtered.length > 0 ? filtered : [candidates[0]];
 }
 
-/**
- * Loads engine analysis for the current FEN, stashes the engine top moves
- * for legality-checking, and updates the eval bar.
- */
 async function primeBaselineAndExpected() {
   try {
     const data = await fetchEngineMoves(session.fen);
-    session.expectedTopMoves = filterAcceptableMoves(data.top_moves || [], session.config);
-    setEvalBar(data.eval, data.eval_mate);
+    const spec = session.positions[session.currentPositionIdx];
+    session.expectedTopMoves = filterAcceptableMoves(
+      data.top_moves || [],
+      session.config,
+      session.userColor,
+      spec?.isMateScenario ?? false
+    );
+    setEvalBar(data.eval, data.eval_mate, session.userColor);
     if (session.baselineEval == null) {
       session.baselineEval = signedForUser(data.eval);
     }
+    // Reset hint panel to idle whenever a new expected-moves set is loaded.
+    setHintPanel("idle", [], session.userColor);
   } catch (e) {
     console.error("Engine analysis failed", e);
     setStatus("Engine analysis failed. Skip scenario.", { tone: "error" });
@@ -464,7 +457,7 @@ async function handleUserMove(uci, san, fenAfter) {
 
   session.attempts = 0;
   session.hintLevel = 0;
-  hideHintPrompt();
+  setHintPanel("idle", [], session.userColor);
   clearHints(document.getElementById("trainingBoard"));
 
   session.fen = fenAfter;
@@ -519,7 +512,7 @@ async function afterFinalUserMove() {
   }
 
   const data = await fetchEngineMoves(session.fen);
-  setEvalBar(data.eval, data.eval_mate);
+  setEvalBar(data.eval, data.eval_mate, session.userColor);
   // BUG FIX: finalEval must use eval (user-POV), not eval_mate.
   // eval_mate is a separate field (mate-in-N integer) and must never be
   // mixed into the pawn-unit delta calculation.
@@ -530,7 +523,7 @@ async function afterFinalUserMove() {
 async function playOpponentTurn() {
   try {
     const data = await fetchEngineMoves(session.fen);
-    setEvalBar(data.eval, data.eval_mate);
+    setEvalBar(data.eval, data.eval_mate, session.userColor);
     const reply = pickOpponentReply(data.top_moves || [], session.config);
     if (!reply) {
       // No legal moves → game over (mate or stalemate).
@@ -566,6 +559,14 @@ async function playOpponentTurn() {
    Wrong-move handling + hint escalation
    ========================================================================== */
 
+/**
+ * Updates the always-visible hint panel in the playing screen.
+ * @param {"idle"|"squares"|"arrows"} level
+ */
+function updateHintPanel(level) {
+  setHintPanel(level, session.expectedTopMoves, session.userColor);
+}
+
 function handleWrongMove(uci) {
   session.attempts++;
 
@@ -574,42 +575,56 @@ function handleWrongMove(uci) {
   clearHints(document.getElementById("trainingBoard"));
   highlightCheck(boardCtx.chess);
 
+  const boardEl = document.getElementById("trainingBoard");
+
   if (session.attempts === 1) {
-    setStatus("Not the engine's choice. Try again.", { tone: "warning" });
+    // First wrong attempt: highlight source squares immediately.
+    session.hintLevel = 1;
+    session.score.hintsUsed++;
+    setStatus("Not the engine's choice — pieces to consider are highlighted.", { tone: "warning" });
+    highlightSourceSquares(boardEl, session.expectedTopMoves);
+    updateHintPanel("squares");
     return;
   }
 
   if (session.attempts === 2) {
-    session.hintLevel = 1;
+    // Second wrong attempt: escalate to full arrows.
+    session.hintLevel = 2;
     session.score.hintsUsed++;
-    setStatus(
-      "Still not it — I've highlighted the squares you should consider moving from.",
-      { tone: "warning" }
-    );
-    highlightSourceSquares(
-      document.getElementById("trainingBoard"),
-      session.expectedTopMoves
-    );
+    setStatus("Still not it — arrows show the best moves.", { tone: "warning" });
+    drawHintArrows(boardEl, session.expectedTopMoves, session.userColor);
+    updateHintPanel("arrows");
     return;
   }
 
-  // attempts ≥ 3 → ask before drawing arrows.
-  setStatus("Three tries used. Take a hint?", { tone: "warning" });
-  showHintPrompt(
-    () => {
-      session.hintLevel = 2;
-      session.score.hintsUsed++;
-      drawHintArrows(
-        document.getElementById("trainingBoard"),
-        session.expectedTopMoves,
-        session.userColor
-      );
-      setStatus("Hint shown. Play one of the highlighted moves.", { tone: "info" });
-    },
-    () => {
-      setStatus("Keep trying — no arrows shown.", { tone: "info" });
-    }
-  );
+  // attempts ≥ 3 — arrows already drawn, just keep them and update status.
+  drawHintArrows(boardEl, session.expectedTopMoves, session.userColor);
+  setStatus("Keep trying — use the arrows as guidance.", { tone: "warning" });
+  updateHintPanel("arrows");
+}
+
+/**
+ * Manually escalates the hint level when the user clicks the Hint button.
+ * Level 0 → 1: highlight source squares.
+ * Level 1 → 2: draw full arrows.
+ * Level 2+: already at maximum, just re-show arrows.
+ */
+function handleHintRequest() {
+  const boardEl = document.getElementById("trainingBoard");
+  clearHints(boardEl);
+  session.score.hintsUsed++;
+
+  if (session.hintLevel === 0) {
+    session.hintLevel = 1;
+    highlightSourceSquares(boardEl, session.expectedTopMoves);
+    setStatus("Pieces to consider are highlighted.", { tone: "warning" });
+    updateHintPanel("squares");
+  } else {
+    session.hintLevel = 2;
+    drawHintArrows(boardEl, session.expectedTopMoves, session.userColor);
+    setStatus("Arrows show the best moves.", { tone: "warning" });
+    updateHintPanel("arrows");
+  }
 }
 
 /* ==========================================================================
@@ -869,6 +884,8 @@ function jumpToHistoryIndex(idx) {
   }
 
   boardCtx.board.position(tempChess.fen());
+  // Clear hint arrows/highlights whenever the user browses history.
+  clearHints(document.getElementById("trainingBoard"));
   updateHistoryUI();
   highlightCheck(tempChess);
 }

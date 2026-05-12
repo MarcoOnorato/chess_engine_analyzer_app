@@ -20,14 +20,25 @@ import { playMoveUci, playAlternativeMove } from "./moves.js";
  *
  * @param {number} score - Engine evaluation in pawns; clamped to ±10 for display.
  */
-export function updateEvalBar(score, result = null, mate = null) {
+export function updateEvalBar(score, result = null, mate = null, userColor = "white") {
   const evalText = document.getElementById("evalText");
   const evalFill = document.getElementById("evalFill");
+  const evalBar  = document.getElementById("evalBar");
+
+  // Orient the bar: white fills from bottom (default); black flips so black
+  // advantage fills from top. We achieve this by reversing flex-direction.
+  if (evalBar) {
+    evalBar.style.flexDirection = userColor === "black" ? "column" : "column-reverse";
+  }
 
   // If game ended
   if (result) {
     evalText.textContent = result;
 
+    // For the fill: white always fills from bottom (column-reverse),
+    // black fills from top (column). The fill height represents white's share.
+    // 1-0: white wins → full white fill (100%). 0-1: black wins → 0% white fill.
+    // Both orientations see the "winning side" fill the bar completely.
     if (result === "1-0") evalFill.style.height = "100%";
     else if (result === "0-1") evalFill.style.height = "0%";
     else evalFill.style.height = "50%";
@@ -310,7 +321,8 @@ function injectAlternatives(parentNode, altMoves, currentUci) {
  */
 export async function analyzeCurrentPosition(
   prev_fen = null,
-  last_move_uci = null
+  last_move_uci = null,
+  isNewMove = false
 ) {
   const depth = parseInt(document.getElementById("depth").value, 10) || 14;
   const topMovesEl = document.getElementById("topMoves");
@@ -368,13 +380,13 @@ export async function analyzeCurrentPosition(
 
     // Inject alternatives into the game tree as variation nodes.
     // parentNode is the node *before* the move just played.
-    if (last_move_uci && state.currentNode && state.currentNode.parent) {
+    if (isNewMove && last_move_uci && state.currentNode && state.currentNode.parent) {
       injectAlternatives(state.currentNode.parent, filteredAltMoves, last_move_uci);
     }
 
     // Update state and UI with filtered data
     state.topMovesCache = filteredTopMoves;
-    updateEvalBar(data.eval, data.result, data.eval_mate);
+    updateEvalBar(data.eval, data.result, data.eval_mate, state.board ? state.board.orientation() : "white");
     
     // Render only the moves that passed the filter
     renderMovesList(filteredTopMoves, "topMoves", false);
@@ -417,4 +429,19 @@ export async function analyzeCurrentPosition(
       topMovesEl.innerHTML = `<li style='color:#e6912c;'>Error: ${e.message}</li>`;
     }
   }
+}
+
+/**
+ * Convenience wrapper for calling analyzeCurrentPosition after a new move
+ * is played interactively (not during navigation). This is the only path
+ * that should inject engine alternatives as variation nodes into the tree.
+ *
+ * board.js / moves.js should import and call this instead of the base
+ * analyzeCurrentPosition so navigation (jumpToNode) never injects.
+ *
+ * @param {string|null} prev_fen
+ * @param {string|null} last_move_uci
+ */
+export function analyzeAfterMove(prev_fen = null, last_move_uci = null) {
+  return analyzeCurrentPosition(prev_fen, last_move_uci, true);
 }

@@ -241,7 +241,14 @@ export function bindNavigation() {
   document.getElementById("pgnNext").onclick = nextMove;
   document.getElementById("pgnPrev").onclick = prevMove;
   document.getElementById("resetBtn").onclick = resetAll;
-  document.getElementById("flipBtn").onclick = () => state.board.flip();
+  document.getElementById("flipBtn").onclick = () => {
+    state.board.flip();
+    const evalBar = document.getElementById("evalBar");
+    if (evalBar) {
+      const isFlipped = evalBar.style.flexDirection === "column";
+      evalBar.style.flexDirection = isFlipped ? "column-reverse" : "column";
+    }
+  };
   document.getElementById("undoBtn").onclick = undoLastMove;
 
   const promoteBtn = document.getElementById("promoteBtn");
