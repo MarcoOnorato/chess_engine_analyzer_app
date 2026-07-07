@@ -174,10 +174,41 @@ _engine: Optional[chess.engine.SimpleEngine] = None
 _engine_lock = threading.Lock()
 _last_analysis: Dict[str, Any] = {}   # keys: fen, depth, info
 
+# Global cache for position analysis: (normalized_fen, depth) -> info_list (List[Any])
+_analysis_cache: Dict[Tuple[str, int], List[Any]] = {}
+MAX_CACHE_SIZE = 50000
+
+def _normalize_fen(fen: str) -> str:
+    """
+    Returns the first 4 fields of the FEN (pieces placement, active color,
+    castling rights, and en passant target square) to match identical positions
+    regardless of move counters (halfmove and fullmove numbers).
+    """
+    return " ".join(fen.split()[:4])
+
+def _add_to_cache(fen: str, depth: int, info_list: List[Any]) -> None:
+    norm_fen = _normalize_fen(fen)
+    if len(_analysis_cache) >= MAX_CACHE_SIZE:
+        # Remove the oldest cached item (FIFO eviction)
+        first_key = next(iter(_analysis_cache))
+        _analysis_cache.pop(first_key, None)
+    _analysis_cache[(norm_fen, depth)] = info_list
+
+
 
 def _create_engine() -> chess.engine.SimpleEngine:
     engine = chess.engine.SimpleEngine.popen_uci(str(STOCKFISH_PATH))
-    engine.configure({"Threads": max(1, (os.cpu_count() or 2) - 1)})
+
+    total_ram_mb = 8192
+    hash_mb = max(16, total_ram_mb // 16)
+
+    engine.configure({
+        "Threads": max(1, (os.cpu_count() or 2) - 1),
+        "Hash": hash_mb
+    })
+
+    print(f"Stockfish Hash: {hash_mb} MB")
+
     return engine
 
 
@@ -402,18 +433,32 @@ def analyze() -> Response:
         # Resolve previous-position analysis from cache or fresh engine call.
         prev_info_list: Optional[List[Any]] = None
         if prev_fen:
-            cached = _last_analysis
-            if (
-                cached.get("fen") == prev_fen
-                and cached.get("depth", 0) >= depth
+            norm_prev_fen = _normalize_fen(prev_fen)
+            # 1. Check in our global cache
+            if (norm_prev_fen, depth) in _analysis_cache:
+                prev_info_list = _analysis_cache[(norm_prev_fen, depth)]
+            # 2. Check in _last_analysis (legacy fallback, or if it has higher depth)
+            elif (
+                _last_analysis.get("fen") == prev_fen
+                and _last_analysis.get("depth", 0) >= depth
             ):
-                prev_info_list = cached["info"]
+                prev_info_list = _last_analysis["info"]
+            # 3. Otherwise, run the engine
             else:
                 prev_board = chess.Board(prev_fen)
                 prev_info_list = engine.analyse(prev_board, limit, multipv=3)
+                _add_to_cache(prev_fen, depth, prev_info_list)
 
         # Analyse current position.
-        info_list = engine.analyse(board, limit, multipv=3)
+        info_list: Optional[List[Any]] = None
+        norm_fen = _normalize_fen(fen)
+        # 1. Check in our global cache
+        if (norm_fen, depth) in _analysis_cache:
+            info_list = _analysis_cache[(norm_fen, depth)]
+        # 2. Otherwise, run the engine
+        else:
+            info_list = engine.analyse(board, limit, multipv=3)
+            _add_to_cache(fen, depth, info_list)
 
     # Cache the current analysis for the next request.
     _last_analysis.clear()

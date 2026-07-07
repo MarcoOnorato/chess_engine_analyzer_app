@@ -24,6 +24,8 @@ import { fenToPos } from "./api.js";
 import { renderHistory, jumpToNode, jumpToMainLineIndex } from "./history.js";
 import { analyzeCurrentPosition } from "./analysis.js";
 import { deleteCurrentNode, promoteCurrentVariation } from "./moves.js";
+import { loadFromCurrentNode } from "./board-arrows.js";
+import { clearBoardSelection } from "./board.js";
 
 /** Cached reference to the move slider. Initialized in `bindNavigation`. */
 let moveSlider = null;
@@ -119,6 +121,8 @@ function resetAll() {
 
   // reset board UI
   state.board.position("start");
+  loadFromCurrentNode();
+  clearBoardSelection();
 
   // reset input
   document.getElementById("pgnInput").value = "";
@@ -221,6 +225,8 @@ function deleteVariation() {
   state.currentNode = parent;
   state.game_fen = parent.fenAfter;
   state.board.position(fenToPos(state.game_fen));
+  loadFromCurrentNode();
+  clearBoardSelection();
 
   renderHistory();
   updatePgnNav();

@@ -17,6 +17,7 @@
 import { state } from "./state.js";
 import { api, fenToPos } from "./api.js";
 import { pushMove } from "./moves.js";
+import { clearAllUserOverlays, squareFromEvent } from "./board-arrows.js";
 
 /**
  * Chessboard.js `onDrop` callback. Returning the string "snapback" tells the
@@ -29,6 +30,7 @@ import { pushMove } from "./moves.js";
  */
 export function onDrop(source, target, piece) {
   if (source === target) return "snapback";
+  clearBoardSelection();
 
   const isPromotion =
     (piece === "wP" && target[1] === "8") ||
@@ -172,4 +174,104 @@ function askPromotion(color) {
     document.addEventListener("keydown", onKey);
     modal.classList.remove("hidden");
   });
+}
+
+let _selectedSquare = null;
+
+export function bindClickToMove(boardEl) {
+  boardEl.addEventListener("mousedown", (e) => {
+    // Only handle left clicks
+    if (e.button !== 0) return;
+
+    // Clear right click overlays on left click
+    clearAllUserOverlays(boardEl);
+
+    const orientation = state.board.orientation();
+    const sq = squareFromEvent(e, boardEl, orientation);
+    if (!sq) {
+      clearBoardSelection();
+      return;
+    }
+
+    const shouldBlock = handleSquareClick(sq, boardEl);
+    if (shouldBlock) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  },
+  true // capture phase
+  );
+}
+
+function getTurn() {
+  if (!state.game_fen) return 'w';
+  const parts = state.game_fen.split(" ");
+  return parts[1] || 'w';
+}
+
+function handleSquareClick(sq, boardEl) {
+  const pos = state.board.position();
+  const piece = pos[sq];
+  const turn = getTurn();
+
+  if (_selectedSquare === null) {
+    // No piece is selected yet. Check if clicked square has a piece of the turn's color
+    if (piece && piece[0] === turn) {
+      highlightSelectedSquare(boardEl, sq);
+    }
+    return false; // Do not block mousedown so dragging is still possible
+  } else {
+    // A piece is already selected
+    if (_selectedSquare === sq) {
+      // Clicked same square -> deselect, but don't block so they can still drag it
+      clearBoardSelection();
+      return false; 
+    }
+
+    // Clicked another square
+    const selectedPiece = pos[_selectedSquare];
+    if (piece && piece[0] === turn) {
+      // Clicked another piece of the active color -> change selection
+      highlightSelectedSquare(boardEl, sq);
+      return false; // Do not block so dragging the new piece is possible
+    } else {
+      // Attempting to move selected piece to sq (either empty or opponent's piece)
+      const source = _selectedSquare;
+      const target = sq;
+
+      clearBoardSelection();
+
+      if (selectedPiece) {
+        const isPromotion =
+          (selectedPiece === "wP" && target[1] === "8") ||
+          (selectedPiece === "bP" && target[1] === "1");
+
+        if (isPromotion) {
+          handlePromotion(source, target, selectedPiece === "wP" ? "white" : "black");
+        } else {
+          handleNormalMove(source, target);
+        }
+      }
+      return true; // Block event propagation so chessboard.js doesn't start a drag
+    }
+  }
+}
+
+function highlightSelectedSquare(boardEl, sq) {
+  clearBoardSelection();
+  _selectedSquare = sq;
+  const sqEl = boardEl.querySelector(`.square-${sq}`);
+  if (sqEl) {
+    sqEl.classList.add("highlight-selected");
+  }
+}
+
+export function clearBoardSelection() {
+  _selectedSquare = null;
+  const boardEl = document.getElementById("board");
+  if (boardEl) {
+    boardEl.querySelectorAll(".highlight-selected").forEach((el) => {
+      el.classList.remove("highlight-selected");
+    });
+  }
 }

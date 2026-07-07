@@ -14,7 +14,7 @@
  */
 
 import { state } from "./state.js";
-import { onDrop, onSnapEnd } from "./board.js";
+import { onDrop, onSnapEnd, bindClickToMove } from "./board.js";
 import { analyzeCurrentPosition, renderArrows } from "./analysis.js";
 import { bindNavigation } from "./navigation.js";
 import { bindOpenings } from "./openings.js";
@@ -23,7 +23,7 @@ import { bindLichess } from "./lichess.js";
 import { bindPgnLoader } from "./pgn.js";
 import { bindCollapsible } from "./collapsible.js";
 import { renderHistory } from "./history.js";
-import { bindRightClickArrows, clearUserArrows } from "./board-arrows.js";
+import { bindRightClickArrows, clearUserArrows, redrawCurrentOverlays } from "./board-arrows.js";
 import { openTrainAsPlayerModal } from "./training-player.js";
 
 
@@ -43,10 +43,14 @@ window.addEventListener("load", () => {
     () => state.board.orientation()
   );
 
+  // Click to select & move pieces
+  bindClickToMove(document.getElementById("board"));
+
   // Keep the SVG arrow overlay aligned with the board on resize.
   window.addEventListener("resize", () => {
     state.board.resize();
     renderArrows(state.topMovesCache);
+    redrawCurrentOverlays();
   });
 
   // Re-render engine arrows after board flip so they follow the new orientation.
@@ -55,7 +59,10 @@ window.addEventListener("load", () => {
   document.getElementById("flipBtn")?.addEventListener("click", () => {
     // board.flip() is already called by bindNavigation; we just need to
     // schedule a re-render *after* the flip animation settles.
-    requestAnimationFrame(() => renderArrows(state.topMovesCache));
+    requestAnimationFrame(() => {
+      renderArrows(state.topMovesCache);
+      redrawCurrentOverlays();
+    });
   });
 
   // Wire every UI subsystem.

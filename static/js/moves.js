@@ -27,6 +27,8 @@ import { api, fenToPos } from "./api.js";
 import { renderHistory } from "./history.js";
 import { analyzeCurrentPosition, renderArrows } from "./analysis.js";
 import { updatePgnNav } from "./navigation.js";
+import { loadFromCurrentNode } from "./board-arrows.js";
+import { clearBoardSelection } from "./board.js";
 
 /**
  * Plays a UCI move from the current node, appending it to the tree.
@@ -118,6 +120,8 @@ export function pushMove(legalResult, fen_before) {
   state.currentNode = node;
   state.game_fen = node.fenAfter;
   state.board.position(fenToPos(state.game_fen));
+  loadFromCurrentNode();
+  clearBoardSelection();
 
   renderHistory();
   updatePgnNav();
@@ -165,6 +169,8 @@ export function deleteCurrentNode() {
   state.currentNode = parent;
   state.game_fen = parent.fenAfter;
   state.board.position(fenToPos(state.game_fen));
+  loadFromCurrentNode();
+  clearBoardSelection();
 }
 
 /**

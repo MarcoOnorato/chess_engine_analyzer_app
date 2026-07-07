@@ -34,6 +34,8 @@ import { analyzeCurrentPosition } from "./analysis.js";
 import { calculateGameAccuracy, renderEvalChart } from "./accuracy.js";
 import { collapseLoadPanel } from "./collapsible.js";
 import { renderTrainingModal } from "./training.js";
+import { loadFromCurrentNode } from "./board-arrows.js";
+import { clearBoardSelection } from "./board.js";
 
 /** Wires the PGN loading modal and buttons to the pipeline. */
 export function bindPgnLoader() {
@@ -147,6 +149,8 @@ export async function loadPgn(directPgn = null) {
     state.currentNode = mainLineTip;
     state.game_fen = mainLineTip.fenAfter;
     state.board.position(fenToPos(state.game_fen));
+    loadFromCurrentNode();
+    clearBoardSelection();
 
     renderHistory();
     updatePgnNav();

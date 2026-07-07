@@ -582,3 +582,12 @@
     .load-panel.collapsed .load-panel-chevron {
       transform: rotate(-90deg);
     }
+
+    .highlight-selected {
+      background-color: rgba(247, 247, 105, 0.6) !important;
+    }
+
+    .highlight-right-click {
+      background-color: rgba(246, 130, 42, 0.5) !important;
+    }
+

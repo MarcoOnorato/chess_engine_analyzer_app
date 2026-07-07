@@ -11,7 +11,6 @@ A real-time chess analysis web app powered by Stockfish engine, Flask backend, a
 
 ### Training
 
-![Scenario mode training](scenario_mode_select.png)
 
 ![Scenario selection](scenario_stage_select.png)
 ---

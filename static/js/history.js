@@ -37,6 +37,8 @@ import { fenToPos } from "./api.js";
 import { analyzeCurrentPosition } from "./analysis.js";
 import { updatePgnNav } from "./navigation.js";
 import { refreshEvalChartHighlight } from "./accuracy.js";
+import { loadFromCurrentNode } from "./board-arrows.js";
+import { clearBoardSelection } from "./board.js";
 
 /**
  * Re-renders the game tree into `#gameTree`. Idempotent.
@@ -373,6 +375,8 @@ export function jumpToNode(node) {
   scrollHistoryToCurrentMove();
   updatePgnNav();
   refreshEvalChartHighlight();
+  loadFromCurrentNode();
+  clearBoardSelection();
 
   const prev_fen = node.parent ? node.parent.fenAfter : null;
   const last_move_uci = node.uci || null;
