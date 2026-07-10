@@ -51,20 +51,17 @@ export function bindLichess() {
       try {
         // pgnInJson=true to have the PGN in the json object
         const response = await fetch(
-          `https://lichess.org/api/games/user/${username}?max=${count}&pgnInJson=true`,
+          `https://lichess.org/api/games/user/${encodeURIComponent(username)}?max=${encodeURIComponent(count)}&pgnInJson=true`,
           { headers: { Accept: "application/x-ndjson" } }
         );
   
         if (!response.ok)
           throw new Error("Lichess user not found or API error.");
   
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let { value, done } = await reader.read();
-        let chunk = decoder.decode(value, { stream: true });
-  
-        // Lichess returns NDJSON [cite: 1]
-        const lines = chunk.split("\n").filter((line) => line.trim() !== "");
+        // Lichess returns NDJSON. Read the full response: one network chunk
+        // can contain only the first 1-2 games, depending on buffering.
+        const text = await response.text();
+        const lines = text.split("\n").filter((line) => line.trim() !== "");
         
         if (lines.length === 0) {
           listEl.innerHTML =
@@ -79,8 +76,8 @@ export function bindLichess() {
           const item = document.createElement("div");
           item.className = "opening-item";
   
-          const white = game.players.white.user.name;
-          const black = game.players.black.user.name;
+          const white = game.players.white.user?.name || "Anonymous";
+          const black = game.players.black.user?.name || "Anonymous";
           const dateStr = new Date(game.createdAt).toLocaleDateString();
 
           let result = "½-½";
