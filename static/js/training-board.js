@@ -15,8 +15,12 @@
  */
 
 import { api, fenToPos } from "./api.js";
-import { bindRightClickArrows, clearUserArrows } from "./board-arrows.js";
-import { onSnapEnd } from "./board.js";
+import {
+  bindRightClickArrows,
+  clearAllUserOverlays,
+  clearUserArrows,
+  squareFromEvent,
+} from "./board-arrows.js";
 
  
 /** A small in-memory cache: FEN → engine response. */
@@ -49,6 +53,71 @@ export async function fetchEngineMoves(fen, depth = 14) {
  */
 export function mountTrainingBoard({ fen, orientation, onUserMove, isLive = () => true }) {
   const chess = new Chess(fen);
+  let selectedSquare = null;
+
+  const userTurn = () => (orientation === "white" ? "w" : "b");
+
+  const clearSelection = () => {
+    selectedSquare = null;
+    const el = document.getElementById("trainingBoard");
+    if (!el) return;
+    el.querySelectorAll(".highlight-selected").forEach((sqEl) => {
+      sqEl.classList.remove("highlight-selected");
+    });
+  };
+
+  const selectSquare = (sq) => {
+    clearSelection();
+    selectedSquare = sq;
+    const el = document.getElementById("trainingBoard");
+    const sqEl = el?.querySelector(`.square-${sq}`);
+    if (sqEl) sqEl.classList.add("highlight-selected");
+  };
+
+  const canMovePiece = (piece) => {
+    if (!isLive()) return false;
+    if (chess.game_over()) return false;
+    if (!piece) return false;
+    const turn = chess.turn();
+    return piece[0] === turn && turn === userTurn();
+  };
+
+  const commitUserMove = (source, target) => {
+    if (!source || !target || target === "offboard" || source === target) {
+      board.position(fenToPos(chess.fen()));
+      return false;
+    }
+
+    if (!isLive()) {
+      showHistoryToast();
+      board.position(fenToPos(chess.fen()));
+      return false;
+    }
+
+    let move = null;
+    try {
+      move = chess.move({
+        from: source,
+        to: target,
+        promotion: "q",
+      });
+    } catch {
+      move = null;
+    }
+
+    if (move === null) {
+      board.position(fenToPos(chess.fen()));
+      return false;
+    }
+
+    const boardEl = document.getElementById("trainingBoard");
+    if (boardEl) clearUserArrows(boardEl);
+    board.position(fenToPos(chess.fen()));
+    const uci = source + target + (move.promotion || "");
+    onUserMove(uci, move.san, chess.fen());
+    return true;
+  };
+
   /* eslint-disable no-undef */
   const board = Chessboard("trainingBoard", {
     position: fenToPos(fen),
@@ -63,34 +132,24 @@ export function mountTrainingBoard({ fen, orientation, onUserMove, isLive = () =
         showHistoryToast();
         return false;
       }
-      if (chess.game_over()) return false;
-      const turn       = chess.turn();
-      const pieceColor = piece[0];
-      if (turn !== pieceColor) return false;
-      const userTurn = orientation === "white" ? "w" : "b";
-      if (turn !== userTurn) return false;
+      if (!canMovePiece(piece)) return false;
     },
 
     onDrop: (source, target) => {
+      // Match the main board behavior: a plain click on a piece can be
+      // reported by chessboard.js as a same-square drop. Do not clear the
+      // click-to-move selection in that case, otherwise the first click
+      // selects and the mouse release immediately deselects.
+      if (source === target) return "snapback";
+
+      clearSelection();
       // Double-check: if somehow a drop fires while in history mode, snapback.
       if (!isLive()) {
         showHistoryToast();
         return "snapback";
       }
 
-      const move = chess.move({
-        from: source,
-        to: target,
-        promotion: "q",
-      });
-    
-      if (move === null) {
-        return "snapback";
-      }
-
-      clearUserArrows(document.getElementById("trainingBoard"));
-      const uci = source + target + (move.promotion || "");
-      onUserMove(uci, move.san, chess.fen());
+      if (!commitUserMove(source, target)) return "snapback";
     },
     
     // Sync shown state
@@ -106,20 +165,69 @@ export function mountTrainingBoard({ fen, orientation, onUserMove, isLive = () =
   };
   window.addEventListener("resize", handleResize);
 
+  const handleClickToMove = (e) => {
+    if (e.button !== 0) return;
+
+    const boardEl = document.getElementById("trainingBoard");
+    if (!boardEl) return;
+
+    clearAllUserOverlays(boardEl);
+
+    const sq = squareFromEvent(e, boardEl, board.orientation());
+    if (!sq) {
+      clearSelection();
+      return;
+    }
+
+    const pos = board.position();
+    const piece = pos[sq];
+
+    if (selectedSquare === null) {
+      if (canMovePiece(piece)) selectSquare(sq);
+      return;
+    }
+
+    if (selectedSquare === sq) {
+      clearSelection();
+      return;
+    }
+
+    const selectedPiece = pos[selectedSquare];
+    if (canMovePiece(piece)) {
+      selectSquare(sq);
+      return;
+    }
+
+    const source = selectedSquare;
+    clearSelection();
+
+    if (selectedPiece) {
+      commitUserMove(source, sq);
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  };
+
   const ctx = {
     board,
     chess,
     destroy() {
       window.removeEventListener("resize", handleResize);
       const el = document.getElementById("trainingBoard");
-      if (el) el.innerHTML = "";
+      if (el) {
+        el.removeEventListener("mousedown", handleClickToMove, true);
+        el.innerHTML = "";
+      }
     },
   };
 
   requestAnimationFrame(() => {
     board.resize();
     const el = document.getElementById("trainingBoard");
-    if (el) bindRightClickArrows(el, () => orientation);
+    if (el) {
+      bindRightClickArrows(el, () => orientation);
+      el.addEventListener("mousedown", handleClickToMove, true);
+    }
   });
   
   return ctx;
