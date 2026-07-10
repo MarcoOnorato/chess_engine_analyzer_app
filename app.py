@@ -547,7 +547,15 @@ def analyze() -> Response:
                 raw_loss = float(best_eval_prev - actual_eval)
                 diff = max(0.0, raw_loss)
                 is_sac = is_real_sacrifice(prev_board, last_move)
-                label, symbol, color = classify_move(diff, is_sac)
+                
+                num_legal_moves = len(list(prev_board.legal_moves))
+                if num_legal_moves == 1:
+                    label, symbol, color = "Best", "★", "#26bbff"
+                    diff = 0.0
+                elif diff >= 200 and best_eval_prev >= 150 and actual_eval >= -150:
+                    label, symbol, color = "Miss", "Ø", "#ff7769"
+                else:
+                    label, symbol, color = classify_move(diff, is_sac)
 
             classification = {
                 "label": label,
