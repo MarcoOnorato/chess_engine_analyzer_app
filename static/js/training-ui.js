@@ -449,6 +449,32 @@ export function setEvalBar(score, mate = null, userColor = "white") {
 }
 
 /**
+ * Shows a finished-game result on the training eval bar, mirroring the main
+ * analysis board: the winner's side fills the bar completely and the score
+ * (1-0 / 0-1 / ½-½) is shown in the bar text.
+ *
+ * @param {"1-0"|"0-1"|"½-½"} result
+ * @param {"white"|"black"} [userColor="white"]
+ */
+export function setEvalResult(result, userColor = "white") {
+  const fill = document.getElementById("trainingEvalFill");
+  const txt  = document.getElementById("trainingEvalText");
+  const bar  = document.getElementById("trainingEvalBar");
+  if (!fill || !txt) return;
+
+  // The fill height always represents white's share, so 1-0 fills the white
+  // end fully and 0-1 empties it; the flex-direction (set for the user's
+  // orientation) makes the winning side visually fill the bar.
+  if (bar) {
+    bar.style.flexDirection = userColor === "black" ? "column" : "column-reverse";
+  }
+  txt.textContent = result;
+  if (result === "1-0") fill.style.height = "100%";
+  else if (result === "0-1") fill.style.height = "0%";
+  else fill.style.height = "50%";
+}
+
+/**
  * Updates the always-visible hint panel.
  *
  * @param {"idle"|"squares"|"arrows"} level

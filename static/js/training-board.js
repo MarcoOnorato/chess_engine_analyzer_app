@@ -31,12 +31,20 @@ const engineCache = new Map();
  *
  * @param {string} fen
  * @param {number} depth
+ * @param {{engineElo?: number|null, skillLevel?: number|null}} [strength]
  * @returns {Promise<{top_moves:any[], eval:number, eval_mate:number|null}>}
  */
-export async function fetchEngineMoves(fen, depth = 14) {
-  if (engineCache.has(fen)) return engineCache.get(fen);
-  const data = await api("/api/analyze", { fen, depth });
-  engineCache.set(fen, data);
+export async function fetchEngineMoves(fen, depth = 14, strength = {}) {
+  const strengthKey = JSON.stringify(strength || {});
+  const cacheKey = `${fen}|${depth}|${strengthKey}`;
+  if (engineCache.has(cacheKey)) return engineCache.get(cacheKey);
+  const data = await api("/api/analyze", {
+    fen,
+    depth,
+    engine_elo: strength.engineElo ?? null,
+    skill_level: strength.skillLevel ?? null,
+  });
+  engineCache.set(cacheKey, data);
   return data;
 }
 
@@ -49,9 +57,11 @@ export async function fetchEngineMoves(fen, depth = 14) {
  * @param {"white"|"black"} opts.orientation
  * @param {(uci:string, san:string) => void} opts.onUserMove
  *        Called when the user successfully drops a *legal* move.
+ * @param {number} [opts.moveSpeed=200]     chessboard.js piece-glide duration
+ *        (ms) for animated position changes, e.g. the opponent's reply.
  * @returns {{ board: any, chess: any, destroy: () => void }}
  */
-export function mountTrainingBoard({ fen, orientation, onUserMove, isLive = () => true }) {
+export function mountTrainingBoard({ fen, orientation, onUserMove, isLive = () => true, moveSpeed = 200 }) {
   const chess = new Chess(fen);
   let selectedSquare = null;
 
@@ -123,6 +133,11 @@ export function mountTrainingBoard({ fen, orientation, onUserMove, isLive = () =
     position: fenToPos(fen),
     orientation,
     draggable: true,
+    // Smoother opponent-move glide; slightly softer snap/snapback too.
+    moveSpeed,
+    snapbackSpeed: 120,
+    snapSpeed: 60,
+    appearSpeed: 220,
     pieceTheme:
       "https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png",
 

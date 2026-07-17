@@ -83,6 +83,13 @@ export function createSession() {
     fen: null,
     /** Top-engine SAN list at the current step. */
     expectedTopMoves: [],
+    /**
+     * True only when it is genuinely the user's turn at the live position and
+     * `expectedTopMoves` is fresh for it. Gates move-hints so a hint requested
+     * while the opponent is still thinking can't show the previous position's
+     * suggestion.
+     */
+    userToMove: false,
     /** Eval (signed for user) at the start of current scenario, used as baseline. */
     baselineEval: null,
     /** Eval at end of K moves — written when scenario finishes. */
@@ -108,6 +115,7 @@ export function resetPositionState(session) {
   session.attempts = 0;
   session.hintLevel = 0;
   session.expectedTopMoves = [];
+  session.userToMove = false;
   session.baselineEval = null;
   session.finalEval = null;
 }

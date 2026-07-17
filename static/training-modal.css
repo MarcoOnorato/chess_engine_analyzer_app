@@ -601,6 +601,46 @@
     border-color: #26bbff;
     color: #26bbff;
 }
+.tplay-nav-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    border-color: #33475a;
+    color: #7a8aa0;
+    background: #02050c;
+}
+.tplay-hint-btn {
+    font-size: 0.95em;
+    border-color: #f0c15c;
+    color: #f7d488;
+}
+.tplay-hint-btn:hover:not(:disabled) {
+    border-color: #f0c15c;
+    color: #f0c15c;
+}
+.tplay-hint-depth {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.72em;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: #8a99ad;
+}
+.tplay-hint-depth input {
+    width: 48px;
+    padding: 5px 6px;
+    background: #02050c;
+    border: 1px solid #33475a;
+    border-radius: 4px;
+    color: #ebf8ff;
+    font-family: inherit;
+    font-size: 1.15em;
+    text-align: center;
+}
+.tplay-hint-depth input:focus {
+    outline: none;
+    border-color: #f0c15c;
+}
 
 /* ---- Right column ---- */
 .tplay-side-col {
@@ -622,6 +662,97 @@
     font-weight: 600;
     margin-bottom: 8px;
 }
+
+/* Header row: title on the left, variation actions on the right */
+.tplay-history-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.tplay-history-head .tplay-history-label {
+    margin-bottom: 0;
+}
+.tplay-var-actions {
+    display: flex;
+    gap: 6px;
+}
+.tplay-var-btn {
+    background: transparent;
+    border: 1px solid #33475a;
+    color: #8a99ad;
+    padding: 3px 9px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.74em;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.tplay-var-btn:hover:not(:disabled) {
+    border-color: #26bbff;
+    color: #26bbff;
+    background: rgba(38, 187, 255, 0.08);
+}
+.tplay-var-btn-danger:hover:not(:disabled) {
+    border-color: #e0715a;
+    color: #f08a76;
+    background: rgba(224, 113, 90, 0.08);
+}
+.tplay-var-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+.tplay-history-hint {
+    font-size: 0.72em;
+    color: #556070;
+    margin: 6px 0 8px;
+    line-height: 1.4;
+}
+
+/* Reset button: wider than the icon-only nav buttons, with a clear label */
+.tplay-reset-btn {
+    font-size: 0.95em;
+}
+
+/* Hover tooltip for controls that carry a data-tip attribute */
+[data-tip] {
+    position: relative;
+}
+[data-tip]:hover::after {
+    content: attr(data-tip);
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 8px);
+    transform: translateX(-50%);
+    z-index: 50;
+    width: max-content;
+    max-width: 240px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    background: #05080f;
+    border: 1px solid #26bbff;
+    color: #d7ecff;
+    font-size: 0.75em;
+    font-weight: 500;
+    line-height: 1.4;
+    white-space: normal;
+    text-align: center;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+    pointer-events: none;
+}
+[data-tip]:hover::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 2px);
+    transform: translateX(-50%);
+    z-index: 50;
+    border: 6px solid transparent;
+    border-top-color: #26bbff;
+    pointer-events: none;
+}
+
 .tplay-history-scroll {
     overflow-y: auto;
     max-height: 36vh;

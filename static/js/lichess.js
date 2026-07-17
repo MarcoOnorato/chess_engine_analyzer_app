@@ -17,8 +17,11 @@ export function bindLichess() {
   
     document.getElementById("openLichessBtn").onclick = () => {
       modal.classList.remove("hidden");
+      usernameInput.focus();
+      usernameInput.click();
+      usernameInput.setSelectionRange(0, usernameInput.value.length);
     };
-  
+
     document.getElementById("closeLichess").onclick = () =>
       modal.classList.add("hidden");
 
@@ -32,9 +35,6 @@ export function bindLichess() {
     modal.addEventListener("click", (e) => {
       if (e.target === modal) {
         modal.classList.add("hidden");
-        usernameInput.focus();
-        usernameInput.click();
-        usernameInput.setSelectionRange(0, usernameInput.value.length);
       }
     });
   

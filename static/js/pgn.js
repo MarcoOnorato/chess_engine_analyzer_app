@@ -32,6 +32,7 @@ import { renderHistory, jumpToMainLineIndex, scrollHistoryToCurrentMove } from "
 import { updatePgnNav } from "./navigation.js";
 import { analyzeCurrentPosition } from "./analysis.js";
 import { calculateGameAccuracy, renderEvalChart } from "./accuracy.js";
+import { renderGameReview } from "./game-review.js";
 import { collapseLoadPanel } from "./collapsible.js";
 import { renderTrainingModal } from "./training.js";
 import { loadFromCurrentNode } from "./board-arrows.js";
@@ -156,6 +157,7 @@ export async function loadPgn(directPgn = null) {
     updatePgnNav();
     calculateGameAccuracy();
     renderEvalChart((mainIndex) => jumpToMainLineIndex(mainIndex + 1));
+    renderGameReview();
     scrollHistoryToCurrentMove();
 
     // enable training button
@@ -232,6 +234,7 @@ function createNode(parent, backend) {
     cpLoss: null,
     eval: null,
     eval_mate: null,
+    opening: null,
     comment: backend.comment || "",
     nags: backend.nags || [],
   };
@@ -262,6 +265,7 @@ function buildLinearChain(moves, fens, root) {
       cpLoss: null,
       eval: null,
       eval_mate: null,
+      opening: null,
       comment: "",
       nags: [],
     };
@@ -329,6 +333,7 @@ async function analyzeAllNodes(nodes, depth, loadingText) {
     node.eval = analysis.eval;
     node.eval_mate = analysis.eval_mate;
     node.cpLoss = Math.max(0, analysis.best_eval_loss || 0);
+    node.opening = analysis.opening || null;
 
     if (
       mainLineSet.has(node) &&

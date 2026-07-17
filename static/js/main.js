@@ -25,6 +25,8 @@ import { bindCollapsible } from "./collapsible.js";
 import { renderHistory } from "./history.js";
 import { bindRightClickArrows, clearUserArrows, redrawCurrentOverlays } from "./board-arrows.js";
 import { openTrainAsPlayerModal } from "./training-player.js";
+import { openEngineTrainingModal } from "./engine-training.js";
+import { bindGameReviewToggle } from "./game-review.js";
 
 
 window.addEventListener("load", () => {
@@ -72,9 +74,14 @@ window.addEventListener("load", () => {
   bindLichess();
   bindPgnLoader();
   bindCollapsible();
+  bindGameReviewToggle();
 
   document.getElementById("trainingOnPlayerBtn")?.addEventListener("click", () => {
     openTrainAsPlayerModal();
+  });
+
+  document.getElementById("engineTrainingBtn")?.addEventListener("click", () => {
+    openEngineTrainingModal();
   });
 
   // Initial render: empty tree, starting position analysis.

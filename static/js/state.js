@@ -44,6 +44,7 @@ export const STARTING_FEN =
  * @property {number|null} cpLoss      Centipawn loss vs. best move.
  * @property {number|null} eval        Static eval at this node (in pawns).
  * @property {number|null} eval_mate   Mate-in-N at this node, if any.
+ * @property {string|null} opening     Detected opening name at this node, if any.
  */
 
 let _nextId = 0;
@@ -72,6 +73,7 @@ export function makeRoot(fen = STARTING_FEN) {
     cpLoss: null,
     eval: null,
     eval_mate: null,
+    opening: null,
   };
 }
 

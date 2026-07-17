@@ -172,10 +172,11 @@ import threading
 
 _engine: Optional[chess.engine.SimpleEngine] = None
 _engine_lock = threading.Lock()
-_last_analysis: Dict[str, Any] = {}   # keys: fen, depth, info
+_last_analysis: Dict[str, Any] = {}   # keys: fen, depth, strength_key, info
 
-# Global cache for position analysis: (normalized_fen, depth) -> info_list (List[Any])
-_analysis_cache: Dict[Tuple[str, int], List[Any]] = {}
+# Global cache for position analysis:
+# (normalized_fen, depth, strength_key) -> info_list (List[Any])
+_analysis_cache: Dict[Tuple[str, int, str], List[Any]] = {}
 MAX_CACHE_SIZE = 50000
 
 def _normalize_fen(fen: str) -> str:
@@ -186,13 +187,83 @@ def _normalize_fen(fen: str) -> str:
     """
     return " ".join(fen.split()[:4])
 
-def _add_to_cache(fen: str, depth: int, info_list: List[Any]) -> None:
+def _strength_key(engine_elo: Optional[int], skill_level: Optional[int]) -> str:
+    """
+    Stable cache key for engine-strength settings.
+
+    Full-strength analysis and limited-strength training must not share cache
+    entries, otherwise a position analysed at e.g. 1500 Elo could pollute the
+    normal review analysis.
+    """
+    if engine_elo is not None:
+        return f"elo:{engine_elo}"
+    if skill_level is not None:
+        return f"skill:{skill_level}"
+    return "full"
+
+
+def _add_to_cache(
+    fen: str,
+    depth: int,
+    strength_key: str,
+    info_list: List[Any],
+) -> None:
     norm_fen = _normalize_fen(fen)
     if len(_analysis_cache) >= MAX_CACHE_SIZE:
         # Remove the oldest cached item (FIFO eviction)
         first_key = next(iter(_analysis_cache))
         _analysis_cache.pop(first_key, None)
-    _analysis_cache[(norm_fen, depth)] = info_list
+    _analysis_cache[(norm_fen, depth, strength_key)] = info_list
+
+
+def _option_bounds(engine: chess.engine.SimpleEngine, name: str) -> Tuple[Optional[int], Optional[int]]:
+    option = engine.options.get(name)
+    if option is None:
+        return None, None
+    return getattr(option, "min", None), getattr(option, "max", None)
+
+
+def _clamp_optional(value: int, low: Optional[int], high: Optional[int]) -> int:
+    if low is not None:
+        value = max(low, value)
+    if high is not None:
+        value = min(high, value)
+    return value
+
+
+def _apply_engine_strength(
+    engine: chess.engine.SimpleEngine,
+    engine_elo: Optional[int],
+    skill_level: Optional[int],
+) -> None:
+    """
+    Configures Stockfish strength for the next analysis call.
+
+    For normal app analysis both values are None, so the engine is restored to
+    full strength. For training, the frontend can request either UCI_Elo
+    limiting (when supported) or Skill Level fallback.
+    """
+    opts: Dict[str, Any] = {}
+
+    if engine_elo is not None and "UCI_LimitStrength" in engine.options and "UCI_Elo" in engine.options:
+        low, high = _option_bounds(engine, "UCI_Elo")
+        opts["UCI_LimitStrength"] = True
+        opts["UCI_Elo"] = _clamp_optional(engine_elo, low, high)
+        if "Skill Level" in engine.options:
+            skill_low, skill_high = _option_bounds(engine, "Skill Level")
+            opts["Skill Level"] = _clamp_optional(20, skill_low, skill_high)
+    else:
+        if "UCI_LimitStrength" in engine.options:
+            opts["UCI_LimitStrength"] = False
+
+        if "Skill Level" in engine.options:
+            low, high = _option_bounds(engine, "Skill Level")
+            full_skill = _clamp_optional(20, low, high)
+            requested_skill = full_skill if skill_level is None else skill_level
+            opts["Skill Level"] = _clamp_optional(requested_skill, low, high)
+
+    if opts:
+        engine.configure(opts)
 
 
 
@@ -413,6 +484,17 @@ def analyze() -> Response:
     depth: int = int(data.get("depth", 14))
     prev_fen: Optional[str] = data.get("prev_fen")
     last_move_uci: Optional[str] = data.get("last_move_uci")
+    engine_elo: Optional[int] = (
+        int(data["engine_elo"])
+        if data.get("engine_elo") is not None
+        else None
+    )
+    skill_level: Optional[int] = (
+        int(data["skill_level"])
+        if data.get("skill_level") is not None
+        else None
+    )
+    strength_key = _strength_key(engine_elo, skill_level)
 
     board = chess.Board(fen)
     detected_opening = get_best_opening_name(fen)
@@ -429,40 +511,47 @@ def analyze() -> Response:
     # the result for the *next* request.
     with _engine_lock:
         engine = get_engine()
+        _apply_engine_strength(engine, engine_elo, skill_level)
 
         # Resolve previous-position analysis from cache or fresh engine call.
         prev_info_list: Optional[List[Any]] = None
         if prev_fen:
             norm_prev_fen = _normalize_fen(prev_fen)
             # 1. Check in our global cache
-            if (norm_prev_fen, depth) in _analysis_cache:
-                prev_info_list = _analysis_cache[(norm_prev_fen, depth)]
+            if (norm_prev_fen, depth, strength_key) in _analysis_cache:
+                prev_info_list = _analysis_cache[(norm_prev_fen, depth, strength_key)]
             # 2. Check in _last_analysis (legacy fallback, or if it has higher depth)
             elif (
                 _last_analysis.get("fen") == prev_fen
                 and _last_analysis.get("depth", 0) >= depth
+                and _last_analysis.get("strength_key") == strength_key
             ):
                 prev_info_list = _last_analysis["info"]
             # 3. Otherwise, run the engine
             else:
                 prev_board = chess.Board(prev_fen)
                 prev_info_list = engine.analyse(prev_board, limit, multipv=3)
-                _add_to_cache(prev_fen, depth, prev_info_list)
+                _add_to_cache(prev_fen, depth, strength_key, prev_info_list)
 
         # Analyse current position.
         info_list: Optional[List[Any]] = None
         norm_fen = _normalize_fen(fen)
         # 1. Check in our global cache
-        if (norm_fen, depth) in _analysis_cache:
-            info_list = _analysis_cache[(norm_fen, depth)]
+        if (norm_fen, depth, strength_key) in _analysis_cache:
+            info_list = _analysis_cache[(norm_fen, depth, strength_key)]
         # 2. Otherwise, run the engine
         else:
             info_list = engine.analyse(board, limit, multipv=3)
-            _add_to_cache(fen, depth, info_list)
+            _add_to_cache(fen, depth, strength_key, info_list)
 
     # Cache the current analysis for the next request.
     _last_analysis.clear()
-    _last_analysis.update({"fen": fen, "depth": depth, "info": info_list})
+    _last_analysis.update({
+        "fen": fen,
+        "depth": depth,
+        "strength_key": strength_key,
+        "info": info_list,
+    })
 
     # --- CURRENT POSITION ---
     top_moves = extract_top_moves(info_list, board)

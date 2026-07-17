@@ -287,7 +287,10 @@ async function startScenario(idx) {
   clearCheckHighlight();
   updateHistoryUI();
   setStatus("Fetching engine analysis…", { tone: "info" });
-  
+  // Hints stay locked until the position is primed and it's the user's turn.
+  session.userToMove = false;
+  setHintButtonEnabled(false);
+
   await getModeHandler(session.mode).onScenarioStart(session, { boardCtx });
   // Highlight check after onScenarioStart (which may play an opponent move),
   // so a king already in check at the scenario start gets the red ring.
@@ -295,6 +298,15 @@ async function startScenario(idx) {
   await primeBaselineAndExpected();
   promptUserToMove();
 }
+
+/**
+ * Centipawn loss (vs. the best available move) at/above which a move is no
+ * longer "good enough" to accept or hint. Matches the app's classify_move
+ * boundary: < 80cp is Best/Excellent/Good, 80cp+ is an Inaccuracy or worse.
+ * Keeping the acceptable/hint set below this ensures neither the moves the
+ * user is allowed to play nor the hints are ever meaningfully worsening.
+ */
+const GOOD_MOVE_MAX_CPLOSS = 80;
 
 /**
  * Filters the engine's top-moves list down to moves that are genuinely
@@ -362,21 +374,20 @@ function filterAcceptableMoves(moves, config, userColor, isMateScenario = false)
   const best = candidates[0];
   if (best.score == null) return candidates;
 
-  const HARD_DELTA_PAWNS = 1.0;
+  // Never accept/hint a meaningfully worsening move: keep only moves that
+  // lose less than GOOD_MOVE_MAX_CPLOSS vs. the best move, and never one that
+  // flips a clearly better position into a worse-signed one.
   const SIGN_FLIP_BUFFER = 0.3;
 
   const filtered = candidates.filter((m, idx) => {
     if (idx === 0) return true;
     if (m.score == null) return false;
 
-    const delta = Math.abs(best.score - m.score);
-
-    if (delta > HARD_DELTA_PAWNS) return false;
+    const cpLoss = Math.abs(best.score - m.score) * 100;
+    if (cpLoss >= GOOD_MOVE_MAX_CPLOSS) return false;
 
     if (best.score > SIGN_FLIP_BUFFER && m.score < 0) return false;
     if (best.score < -SIGN_FLIP_BUFFER && m.score > 0) return false;
-
-    if (delta * 100 > (config?.cpTolerance ?? 30) * 3) return false;
 
     return true;
   });
@@ -413,6 +424,11 @@ function promptUserToMove() {
     return;
   }
 
+  // It's now genuinely the user's turn with a fresh expected-moves set, so
+  // hints are safe to request.
+  session.userToMove = true;
+  setHintButtonEnabled(true);
+
   const spec = session.positions[session.currentPositionIdx];
 
   if (spec.isMateScenario) {
@@ -447,6 +463,10 @@ async function handleUserMove(uci, san, fenAfter) {
     handleWrongMove(uci);
     return;
   }
+
+  // Accepted — lock hints until the next position is primed for the user.
+  session.userToMove = false;
+  setHintButtonEnabled(false);
 
   // Accepted — update counters and continue.
   if (session.attempts === 0 && session.hintLevel === 0) {
@@ -610,6 +630,18 @@ function handleWrongMove(uci) {
  * Level 2+: already at maximum, just re-show arrows.
  */
 function handleHintRequest() {
+  // Only hint for the live position on the user's turn. Otherwise the
+  // suggestion would reflect a stale expected-moves set (e.g. while the
+  // opponent is still thinking) or a position the user is only browsing.
+  if (viewIndex !== -1) {
+    setStatus("Return to the current move to get a hint.", { tone: "info" });
+    return;
+  }
+  if (!session.userToMove) {
+    setStatus("Wait for your turn — the opponent is still to move.", { tone: "info" });
+    return;
+  }
+
   const boardEl = document.getElementById("trainingBoard");
   clearHints(boardEl);
   session.score.hintsUsed++;
@@ -834,9 +866,12 @@ function jumpToHistoryIndex(idx) {
   const allMoves    = [...past, ...sessionMvs];
   const total       = allMoves.length;
 
-  // Clamp
-  if (idx < 0)      idx = -1;
-  if (idx >= total) idx = -1;
+  // Clamp. Viewing the most recent move is the *live* position, so treat it
+  // as live (viewIndex = -1) instead of a history snapshot — otherwise the
+  // board stays input-locked ("go back to the latest move") even though it is
+  // already showing the latest position.
+  if (idx < 0)          idx = -1;
+  if (idx >= total - 1) idx = -1;
 
   viewIndex = idx;
 
@@ -920,6 +955,12 @@ function handleNavigation(type) {
 function signedForUser(evalWhitePOV) {
   if (evalWhitePOV == null) return null;
   return session.userColor === "white" ? evalWhitePOV : -evalWhitePOV;
+}
+
+/** Enables/disables the "Hint" button in the playing screen. */
+function setHintButtonEnabled(enabled) {
+  const btn = document.getElementById("requestHintBtn");
+  if (btn) btn.disabled = !enabled;
 }
 
 function delay(ms) {

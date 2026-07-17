@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="static/game-loading-modals.css">
 <link rel="stylesheet" href="static/training-modal.css">
 <link rel="stylesheet" href="static/training-player.css">
+<link rel="stylesheet" href="static/game-review.css">
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
@@ -50,6 +51,14 @@
       <div class="chart-container">
         <canvas id="evalChart"></canvas>
       </div>
+    </div>
+
+    <div id="gameReviewPanel" class="card game-review-panel hidden collapsed">
+      <button id="gameReviewToggle" class="gr-toggle" aria-expanded="false" aria-controls="gameReviewBody">
+        <span class="gr-toggle-title">🔎 Inspect game</span>
+        <span class="gr-toggle-chevron" aria-hidden="true">▾</span>
+      </button>
+      <div id="gameReviewBody" class="gr-body"></div>
     </div>
 
     <div id="loadingOverlay" class="hidden">
@@ -122,6 +131,7 @@
           📜 Game
           <button id="trainingBtn" title="Train on this game" disabled>Train on this game</button>
           <button id="trainingOnPlayerBtn" title="Train on this game">Train as a player</button>
+          <button id="engineTrainingBtn" title="Play from a chosen position against the engine">Train vs engine</button>
         </h3>
         
         <div class="tree-actions">

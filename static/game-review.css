@@ -1,0 +1,223 @@
+/* ==========================================================================
+    GAME REVIEW PANEL (chess.com-style post-game summary)
+    ========================================================================== */
+
+.game-review-panel {
+    width: 100%;
+    margin-top: 15px;
+    padding: 0;              /* Override .card padding; header sits flush */
+    overflow: hidden;
+}
+
+/* --- Collapsible header ------------------------------------------------- */
+
+.gr-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 12px 15px;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    color: #eee;
+    font-family: inherit;
+    font-size: 0.95em;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.gr-toggle:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.gr-toggle-title {
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
+
+.gr-toggle-chevron {
+    color: #8adeff;
+    font-size: 1.4em;
+    transition: transform 0.3s ease;
+    display: inline-block;
+}
+
+.game-review-panel.collapsed .gr-toggle-chevron {
+    transform: rotate(-90deg);
+}
+
+/* --- Collapsible body -------------------------------------------------- */
+
+.gr-body {
+    padding: 0 15px 15px 15px;
+    max-height: 900px;
+    opacity: 1;
+    transition: max-height 0.35s ease, opacity 0.25s ease, padding 0.35s ease;
+    overflow: hidden;
+}
+
+.game-review-panel.collapsed .gr-body {
+    max-height: 0;
+    opacity: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+/* --- Aligned grid: label | white | black ------------------------------- */
+
+.gr-grid {
+    display: grid;
+    grid-template-columns: minmax(64px, max-content) 1fr 1fr;
+    gap: 10px 10px;
+    align-items: stretch;
+}
+
+/* Let 1fr columns shrink below their content's intrinsic width so nowrap
+   player names ellipsize instead of overflowing the panel. */
+.gr-grid > * {
+    min-width: 0;
+}
+
+.gr-corner {
+    /* Empty top-left / breakdown-left spacer cell. */
+}
+
+.gr-player {
+    background: #02050c;
+    border-radius: 8px;
+    padding: 10px 14px;
+    text-align: center;
+    border: 1px solid #02050c;
+}
+
+.gr-player.gr-white { border-color: rgba(38, 187, 255, 0.35); }
+.gr-player.gr-black { border-color: rgba(240, 193, 92, 0.35); }
+
+.gr-player-name {
+    font-size: 0.78em;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: #8a99ad;
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.gr-elo {
+    font-size: 1.25em;
+    font-weight: bold;
+    color: #ebf8ff;
+}
+
+.gr-elo-tag {
+    font-size: 0.55em;
+    color: #8a99ad;
+    font-weight: normal;
+    text-transform: uppercase;
+    margin-left: 5px;
+    letter-spacing: 0.3px;
+}
+
+.gr-acc {
+    font-size: 0.85em;
+    color: #8a99ad;
+    margin-top: 2px;
+}
+
+/* --- Phase rows -------------------------------------------------------- */
+
+.gr-phase-label {
+    align-self: center;
+    color: #ebf8ff;
+    font-weight: 600;
+    font-size: 0.85em;
+    white-space: nowrap;
+}
+
+.gr-cell {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    text-align: center;
+}
+
+.gr-cell-acc {
+    font-weight: bold;
+    color: #ebf8ff;
+    font-size: 0.9em;
+}
+
+.gr-bar {
+    height: 4px;
+    background: #101c38;
+    border-radius: 2px;
+    margin: 4px 0;
+    overflow: hidden;
+    width: 100%;
+}
+
+.gr-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+}
+
+.gr-cell-elo {
+    font-size: 0.72em;
+    color: #8a99ad;
+}
+
+.gr-cell-empty {
+    align-self: center;
+    text-align: center;
+    color: #445;
+    font-size: 0.85em;
+}
+
+/* --- Move-quality breakdown -------------------------------------------- */
+
+.gr-breakdown {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid #02050c;
+}
+
+.gr-breakdown-col {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.gr-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 0;
+    font-size: 0.82em;
+}
+
+.gr-chip {
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.72em;
+    font-weight: bold;
+    border: 1.5px solid currentColor;
+    flex-shrink: 0;
+}
+
+.gr-row-label {
+    flex: 1;
+    color: #ccd2dc;
+}
+
+.gr-row-count {
+    font-weight: bold;
+    color: #ebf8ff;
+    min-width: 1.4em;
+    text-align: right;
+}
