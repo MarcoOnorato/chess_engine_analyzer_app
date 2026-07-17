@@ -15,6 +15,11 @@ let _profileId = null;
 let _selectedTc = null; // null = all
 let _allGames = [];
 
+// Recent-games pagination state (page size persists across filter changes).
+let _filteredGames = [];
+let _gamesPage = 1;
+let _gamesPageSize = 20;
+
 const TC_LABELS = {
   ultraBullet: "UltraBullet", bullet: "Bullet", blitz: "Blitz", rapid: "Rapid",
   classical: "Classical", daily: "Daily", correspondence: "Correspondence", unknown: "Unknown",
@@ -126,13 +131,8 @@ function renderOpenings(openings) {
     </table>`;
 }
 
-function renderGames(games) {
-  const el = document.getElementById("gamesTable");
-  if (!games.length) {
-    el.innerHTML = `<div class="pdb-empty">No games for this filter.</div>`;
-    return;
-  }
-  const rows = games.slice(0, 60).map((g) => {
+function gamesRowsHtml(games) {
+  return games.map((g) => {
     const date = g.played_at ? g.played_at.slice(0, 10) : "--";
     const opp = g.player_color === "white" ? g.black : g.white;
     const colorDot = g.player_color === "white" ? "⚪" : "⚫";
@@ -149,14 +149,82 @@ function renderGames(games) {
         <td><a class="pdb-btn pdb-btn-ghost pdb-btn-sm" href="/?pgn_game=${g.id}">Open in Review</a></td>
       </tr>`;
   }).join("");
+}
+
+function paginationHtml(page, totalPages, total, start, end) {
+  const disFirst = page <= 1 ? "disabled" : "";
+  const disLast = page >= totalPages ? "disabled" : "";
+  return `
+    <div class="pdb-pagination">
+      <div class="pdb-pag-info">Showing ${start + 1}–${end} of ${total}</div>
+      <div class="pdb-pag-controls">
+        <button class="pdb-pag-btn" data-pg="first" ${disFirst} title="First page">«</button>
+        <button class="pdb-pag-btn" data-pg="prev" ${disFirst} title="Previous page">‹</button>
+        <span class="pdb-pag-page">Page ${page} / ${totalPages}</span>
+        <button class="pdb-pag-btn" data-pg="next" ${disLast} title="Next page">›</button>
+        <button class="pdb-pag-btn" data-pg="last" ${disLast} title="Last page">»</button>
+        <label class="pdb-pag-size">Per page
+          <input type="number" class="pdb-pag-size-input" min="1" value="${_gamesPageSize}">
+        </label>
+      </div>
+    </div>`;
+}
+
+/** Sets the games list to paginate and renders page 1. */
+function setGames(list) {
+  _filteredGames = list;
+  _gamesPage = 1;
+  renderGamesPage();
+}
+
+/** Renders the current page of the recent-games table plus its controls. */
+function renderGamesPage() {
+  const el = document.getElementById("gamesTable");
+  const list = _filteredGames;
+  if (!list.length) {
+    el.innerHTML = `<div class="pdb-empty">No games for this filter.</div>`;
+    return;
+  }
+
+  const size = Math.max(1, _gamesPageSize);
+  const totalPages = Math.max(1, Math.ceil(list.length / size));
+  _gamesPage = Math.min(Math.max(1, _gamesPage), totalPages);
+
+  const start = (_gamesPage - 1) * size;
+  const end = Math.min(start + size, list.length);
+  const pageItems = list.slice(start, end);
+
   el.innerHTML = `
     <table class="pdb-table">
       <thead><tr>
         <th>Date</th><th>Type</th><th>Opponent</th><th>Result</th><th>Opening</th>
         <th class="num">Acc.</th><th class="num">Elo</th><th class="num">Depth</th><th></th>
       </tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
+      <tbody>${gamesRowsHtml(pageItems)}</tbody>
+    </table>
+    ${paginationHtml(_gamesPage, totalPages, list.length, start, end)}`;
+
+  el.querySelectorAll(".pdb-pag-btn").forEach((b) => {
+    if (b.disabled) return;
+    b.onclick = () => {
+      const action = b.dataset.pg;
+      if (action === "first") _gamesPage = 1;
+      else if (action === "prev") _gamesPage -= 1;
+      else if (action === "next") _gamesPage += 1;
+      else if (action === "last") _gamesPage = totalPages;
+      renderGamesPage();
+    };
+  });
+
+  const sizeInput = el.querySelector(".pdb-pag-size-input");
+  if (sizeInput) {
+    sizeInput.onchange = () => {
+      const v = parseInt(sizeInput.value, 10);
+      _gamesPageSize = Number.isFinite(v) && v > 0 ? v : _gamesPageSize;
+      _gamesPage = 1;
+      renderGamesPage();
+    };
+  }
 }
 
 /** Renders the filter-dependent parts (KPIs, charts, openings, phases, games). */
@@ -171,7 +239,7 @@ function paintScoped(stats) {
   const games = _selectedTc
     ? _allGames.filter((g) => (g.time_class || "unknown") === _selectedTc)
     : _allGames;
-  renderGames(games);
+  setGames(games);
 }
 
 async function selectTimeClass(tc) {

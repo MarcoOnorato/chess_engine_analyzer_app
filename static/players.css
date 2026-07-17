@@ -200,6 +200,42 @@ body {
 .pdb-res-loss { color: #ff9a90; font-weight: 600; }
 .pdb-res-draw { color: #9fb3c8; font-weight: 600; }
 
+/* --- pagination --- */
+.pdb-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 14px;
+}
+.pdb-pag-info { font-size: 0.8em; color: #9fb3c8; }
+.pdb-pag-controls { display: flex; align-items: center; gap: 6px; }
+.pdb-pag-btn {
+  background: rgba(56, 189, 248, 0.10);
+  border: 1px solid rgba(56, 189, 248, 0.18);
+  color: #cfe6f5;
+  border-radius: 7px;
+  min-width: 32px;
+  height: 32px;
+  font-size: 1em;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.pdb-pag-btn:hover:not(:disabled) { background: rgba(56, 189, 248, 0.22); }
+.pdb-pag-btn:disabled { opacity: 0.35; cursor: default; }
+.pdb-pag-page { font-size: 0.82em; color: #cfe6f5; padding: 0 8px; white-space: nowrap; }
+.pdb-pag-size { display: flex; align-items: center; gap: 6px; font-size: 0.78em; color: #9fb3c8; margin-left: 6px; }
+.pdb-pag-size-input {
+  width: 64px;
+  background: #0b1a2e;
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  color: #e6edf3;
+  border-radius: 6px;
+  padding: 5px 7px;
+  font-size: 0.9em;
+}
+
 /* --- modal --- */
 .pdb-modal {
   position: fixed; inset: 0; background: rgba(2, 6, 15, 0.7);
