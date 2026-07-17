@@ -117,7 +117,8 @@ def player_stats(profile_id: int) -> Response:
     profile = db.get_profile(profile_id)
     if profile is None:
         return jsonify({"error": "Profile not found"}), 404
-    dashboard = stats.build_dashboard(profile_id)
+    time_class = request.args.get("time_class") or None
+    dashboard = stats.build_dashboard(profile_id, time_class)
     dashboard["profile"] = profile
     return jsonify(dashboard)
 

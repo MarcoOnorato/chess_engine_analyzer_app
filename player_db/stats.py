@@ -156,59 +156,83 @@ def _winrate_bucket() -> Dict[str, int]:
     return {"win": 0, "loss": 0, "draw": 0}
 
 
-def build_dashboard(profile_id: int) -> Dict[str, Any]:
-    """
-    Aggregates all stored games for a profile into the dashboard payload:
-    KPIs, winrate (overall + by color), openings, accuracy trend, per-phase
-    accuracy, move-quality distribution, results by time control.
-    """
-    games = db.games_for_profile(profile_id)
+# Preferred display order for time controls; unknown values are appended, sorted.
+TIME_CLASS_ORDER = ["ultraBullet", "bullet", "blitz", "rapid", "classical", "daily", "correspondence"]
 
-    overall = _winrate_bucket()
+
+def _summarize(games: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Win/draw/loss counts + move-weighted accuracy/acpl/est_elo for a game set."""
+    wdl = _winrate_bucket()
+    acc_sum = acc_w = acpl_sum = acpl_w = 0.0
+    for g in games:
+        res = g.get("player_result")
+        if res in wdl:
+            wdl[res] += 1
+        n = g.get("moves_count") or 0
+        if g.get("accuracy") is not None and n:
+            acc_sum += g["accuracy"] * n
+            acc_w += n
+        if g.get("acpl") is not None and n:
+            acpl_sum += g["acpl"] * n
+            acpl_w += n
+    total = len(games)
+    avg_accuracy = round(acc_sum / acc_w, 1) if acc_w else None
+    avg_acpl = round(acpl_sum / acpl_w, 1) if acpl_w else None
+    return {
+        "games": total,
+        **wdl,
+        "winrate": round(100.0 * wdl["win"] / total, 1) if total else None,
+        "avg_accuracy": avg_accuracy,
+        "avg_acpl": avg_acpl,
+        "est_elo": estimate_elo(avg_acpl) if avg_acpl is not None else None,
+    }
+
+
+def _time_class_order_key(tc: str) -> tuple:
+    return (TIME_CLASS_ORDER.index(tc), "") if tc in TIME_CLASS_ORDER else (len(TIME_CLASS_ORDER), tc)
+
+
+def build_dashboard(profile_id: int, time_class: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Aggregates a profile's games into the dashboard payload. KPIs/charts reflect
+    the selected `time_class` (None = all); the `time_controls` breakdown is
+    always computed over every game so the filter/grouping stays stable.
+    """
+    all_games = db.games_for_profile(profile_id)
+
+    # --- grouping: per time-control summary over ALL games ---
+    tc_groups: Dict[str, List[Dict[str, Any]]] = {}
+    for g in all_games:
+        tc = g.get("time_class") or "unknown"
+        tc_groups.setdefault(tc, []).append(g)
+    time_controls = [
+        {"time_class": tc, **_summarize(gs)}
+        for tc, gs in sorted(tc_groups.items(), key=lambda kv: _time_class_order_key(kv[0]))
+    ]
+
+    # --- filtered subset for KPIs/charts ---
+    games = [g for g in all_games if (g.get("time_class") or "unknown") == time_class] if time_class else all_games
+
+    summary = _summarize(games)
     by_color = {"white": _winrate_bucket(), "black": _winrate_bucket()}
     openings: Dict[str, Dict[str, Any]] = {}
-    by_time_class: Dict[str, Dict[str, int]] = {}
     label_totals: Dict[str, int] = {}
     trend: List[Dict[str, Any]] = []
 
-    acc_weighted_sum = 0.0
-    acc_weight = 0.0
-    acpl_weighted_sum = 0.0
-    acpl_weight = 0.0
-
     for g in games:
         res = g.get("player_result")
-        if res in overall:
-            overall[res] += 1
         color = g.get("player_color")
         if color in by_color and res in by_color[color]:
             by_color[color][res] += 1
 
-        # openings
         op = g.get("opening") or "Unknown"
         ob = openings.setdefault(op, {"opening": op, "games": 0, **_winrate_bucket()})
         ob["games"] += 1
         if res in ("win", "loss", "draw"):
             ob[res] += 1
 
-        # time control
-        tc = g.get("time_class") or "unknown"
-        tb = by_time_class.setdefault(tc, _winrate_bucket())
-        if res in tb:
-            tb[res] += 1
-
-        # move-quality distribution (tracked side counts stored per game)
         for label, col in db._LABEL_COL.items():
             label_totals[label] = label_totals.get(label, 0) + int(g.get(col) or 0)
-
-        # accuracy / acpl weighted by tracked-side move count
-        n = g.get("moves_count") or 0
-        if g.get("accuracy") is not None and n:
-            acc_weighted_sum += g["accuracy"] * n
-            acc_weight += n
-        if g.get("acpl") is not None and n:
-            acpl_weighted_sum += g["acpl"] * n
-            acpl_weight += n
 
         if g.get("accuracy") is not None:
             trend.append({
@@ -220,13 +244,8 @@ def build_dashboard(profile_id: int) -> Dict[str, Any]:
                 "opening": op,
             })
 
-    total = len(games)
-    avg_accuracy = round(acc_weighted_sum / acc_weight, 1) if acc_weight else None
-    avg_acpl = round(acpl_weighted_sum / acpl_weight, 1) if acpl_weight else None
-    est_elo = estimate_elo(avg_acpl) if avg_acpl is not None else None
-
-    # per-phase accuracy from stored per-move cp_loss (tracked side only)
-    phase_rows = db.phase_accuracy_rows(profile_id)
+    # per-phase accuracy from stored per-move cp_loss (tracked side only), filtered
+    phase_rows = db.phase_accuracy_rows(profile_id, time_class)
     phase_map = {r["phase"]: r for r in phase_rows if r.get("phase")}
     phases = []
     for ph in PHASES:
@@ -242,29 +261,27 @@ def build_dashboard(profile_id: int) -> Dict[str, Any]:
         else:
             phases.append({"phase": ph, "accuracy": None, "est_elo": None, "moves": 0})
 
-    # trend chronologically ascending
     trend.sort(key=lambda t: (t.get("played_at") or ""))
-
     openings_list = sorted(openings.values(), key=lambda o: o["games"], reverse=True)
-
-    brilliant = label_totals.get("Brilliant", 0)
+    overall = {"win": summary["win"], "draw": summary["draw"], "loss": summary["loss"]}
 
     return {
+        "time_class": time_class,
+        "time_controls": time_controls,
         "kpis": {
-            "games": total,
-            "avg_accuracy": avg_accuracy,
-            "avg_acpl": avg_acpl,
-            "est_elo": est_elo,
-            "brilliant": brilliant,
+            "games": summary["games"],
+            "avg_accuracy": summary["avg_accuracy"],
+            "avg_acpl": summary["avg_acpl"],
+            "est_elo": summary["est_elo"],
+            "brilliant": label_totals.get("Brilliant", 0),
             "wins": overall["win"],
             "losses": overall["loss"],
             "draws": overall["draw"],
-            "winrate": round(100.0 * overall["win"] / total, 1) if total else None,
+            "winrate": summary["winrate"],
         },
         "winrate": {"overall": overall, "by_color": by_color},
         "openings": openings_list,
         "trend": trend,
         "phases": phases,
         "move_quality": label_totals,
-        "by_time_class": by_time_class,
     }

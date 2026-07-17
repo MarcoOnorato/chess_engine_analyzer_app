@@ -294,20 +294,28 @@ def games_for_profile(profile_id: int) -> List[Dict[str, Any]]:
     return _rows_to_dicts(rows)
 
 
-def phase_accuracy_rows(profile_id: int) -> List[Dict[str, Any]]:
-    """Average per-move accuracy proxy (cp_loss) grouped by phase, tracked side only."""
+def phase_accuracy_rows(profile_id: int, time_class: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Average per-move accuracy proxy (cp_loss) grouped by phase, tracked side only.
+
+    Optionally restricted to a single time control (bullet/blitz/rapid/...).
+    """
     conn = get_conn()
+    params: List[Any] = [profile_id]
+    tc_clause = ""
+    if time_class:
+        tc_clause = "AND g.time_class = ?"
+        params.append(time_class)
     rows = conn.execute(
-        """
+        f"""
         SELECT m.phase AS phase,
                AVG(m.cp_loss) AS avg_cp_loss,
                COUNT(*) AS n
         FROM moves m
         JOIN games g ON g.id = m.game_id
-        WHERE g.profile_id = ? AND m.side = g.player_color AND m.cp_loss IS NOT NULL
+        WHERE g.profile_id = ? AND m.side = g.player_color AND m.cp_loss IS NOT NULL {tc_clause}
         GROUP BY m.phase
         """,
-        (profile_id,),
+        params,
     ).fetchall()
     return _rows_to_dicts(rows)
 
