@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Player DB — Chess Analysis</title>
+
+<link rel="stylesheet" href="static/nav.css">
+<link rel="stylesheet" href="static/players.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+{% set nav_active = 'players' %}
+{% include '_nav.html' %}
+
+<main class="pdb-main">
+
+  <!-- ============ PROFILES VIEW ============ -->
+  <section id="profilesView">
+    <div class="pdb-head">
+      <div>
+        <h1>Tracked players</h1>
+        <p class="pdb-sub">Create a profile for any public Lichess or Chess.com user, import their
+          recent games analyzed at a chosen depth, and explore aggregate stats.</p>
+      </div>
+    </div>
+
+    <div class="pdb-card pdb-new-profile">
+      <h2>New profile</h2>
+      <div class="pdb-form-row">
+        <label>Label
+          <input id="npLabel" type="text" placeholder="e.g. Magnus Carlsen" />
+        </label>
+        <label>Platform
+          <select id="npPlatform">
+            <option value="lichess">Lichess</option>
+            <option value="chesscom">Chess.com</option>
+          </select>
+        </label>
+        <label>Username
+          <input id="npUsername" type="text" placeholder="e.g. DrNykterstein" />
+        </label>
+        <button id="npCreateBtn" class="pdb-btn pdb-btn-primary">Create profile</button>
+      </div>
+      <div id="npError" class="pdb-error"></div>
+    </div>
+
+    <div id="profilesList" class="pdb-profiles-grid"></div>
+    <div id="profilesEmpty" class="pdb-empty hidden">No profiles yet — create one above.</div>
+  </section>
+
+  <!-- ============ DASHBOARD VIEW ============ -->
+  <section id="dashboardView" class="hidden">
+    <div class="pdb-head">
+      <button id="backToProfiles" class="pdb-btn pdb-btn-ghost">← Players</button>
+      <div id="dashTitle" class="pdb-dash-title"></div>
+    </div>
+
+    <div id="kpis" class="pdb-kpis"></div>
+
+    <div class="pdb-charts-grid">
+      <div class="pdb-card pdb-chart">
+        <h3>Results</h3>
+        <div class="pdb-canvas-wrap"><canvas id="chartWinrate"></canvas></div>
+      </div>
+      <div class="pdb-card pdb-chart">
+        <h3>Accuracy by phase</h3>
+        <div class="pdb-canvas-wrap"><canvas id="chartPhase"></canvas></div>
+      </div>
+      <div class="pdb-card pdb-chart">
+        <h3>Move quality</h3>
+        <div class="pdb-canvas-wrap"><canvas id="chartQuality"></canvas></div>
+      </div>
+      <div class="pdb-card pdb-chart pdb-chart-wide">
+        <h3>Accuracy trend</h3>
+        <div class="pdb-canvas-wrap"><canvas id="chartTrend"></canvas></div>
+      </div>
+      <div class="pdb-card pdb-chart pdb-chart-wide">
+        <h3>Openings played</h3>
+        <div id="openingsTable" class="pdb-openings"></div>
+      </div>
+    </div>
+
+    <div class="pdb-card">
+      <h3>Recent games</h3>
+      <div id="gamesTable" class="pdb-games"></div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ============ DEPTH-CONFLICT MODAL ============ -->
+<div id="conflictModal" class="pdb-modal hidden">
+  <div class="pdb-modal-box">
+    <h3>Re-analyze at a new depth?</h3>
+    <p id="conflictText"></p>
+    <div class="pdb-modal-actions">
+      <button id="conflictCancel" class="pdb-btn pdb-btn-ghost">Add new only</button>
+      <button id="conflictConfirm" class="pdb-btn pdb-btn-primary">Recompute &amp; add</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="pdb-toast hidden"></div>
+
+<script type="module" src="static/js/players/main.js"></script>
+</body>
+</html>

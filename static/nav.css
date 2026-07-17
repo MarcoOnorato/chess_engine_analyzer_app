@@ -1,0 +1,53 @@
+/* Shared top navigation bar across app pages (Review / Players). */
+.app-nav {
+  width: 100%;
+  background: rgba(2, 6, 15, 0.72);
+  border-bottom: 1px solid rgba(56, 189, 248, 0.18);
+  backdrop-filter: blur(6px);
+  position: sticky;
+  top: 0;
+  z-index: 500;
+}
+
+.app-nav-inner {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 20px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.app-nav-brand {
+  font-weight: 700;
+  font-size: 1.05em;
+  color: #ebf8ff;
+  text-decoration: none;
+  letter-spacing: 0.2px;
+}
+
+.app-nav-links {
+  display: flex;
+  gap: 6px;
+}
+
+.app-nav-link {
+  color: #9fb3c8;
+  text-decoration: none;
+  font-size: 0.95em;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 8px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.app-nav-link:hover {
+  color: #ebf8ff;
+  background: rgba(56, 189, 248, 0.10);
+}
+
+.app-nav-link.active {
+  color: #26bbff;
+  background: rgba(38, 187, 255, 0.14);
+}

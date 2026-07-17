@@ -1,0 +1,196 @@
+/* Player DB page: profiles list + stats dashboard.
+   Shares the app's dark-blue palette (accent #26bbff). */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: radial-gradient(circle at 30% 20%, #213453, #020617);
+  color: #e6edf3;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  min-height: 100vh;
+}
+
+.hidden { display: none !important; }
+
+.pdb-main {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px 20px 60px;
+}
+
+.pdb-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.pdb-head h1 { margin: 0 0 4px; font-size: 1.6em; color: #ebf8ff; }
+.pdb-sub { margin: 0; color: #9fb3c8; font-size: 0.9em; max-width: 720px; }
+
+.pdb-card {
+  background: rgba(9, 18, 33, 0.72);
+  border: 1px solid rgba(56, 189, 248, 0.14);
+  border-radius: 12px;
+  padding: 18px;
+  margin-bottom: 20px;
+}
+.pdb-card h2 { margin: 0 0 14px; font-size: 1.1em; color: #ebf8ff; }
+.pdb-card h3 { margin: 0 0 12px; font-size: 0.95em; color: #cfe6f5; font-weight: 600; }
+
+/* --- buttons --- */
+.pdb-btn {
+  border: none;
+  border-radius: 8px;
+  padding: 9px 16px;
+  font-size: 0.9em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.15s, background 0.15s;
+}
+.pdb-btn-primary { background: #26bbff; color: #04121f; }
+.pdb-btn-primary:hover { filter: brightness(1.08); }
+.pdb-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.pdb-btn-ghost { background: rgba(56, 189, 248, 0.10); color: #cfe6f5; }
+.pdb-btn-ghost:hover { background: rgba(56, 189, 248, 0.20); }
+.pdb-btn-danger { background: rgba(179, 52, 48, 0.18); color: #ff9a90; }
+.pdb-btn-danger:hover { background: rgba(179, 52, 48, 0.30); }
+.pdb-btn-sm { padding: 6px 11px; font-size: 0.82em; }
+
+/* --- new profile form --- */
+.pdb-form-row {
+  display: flex;
+  gap: 14px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.pdb-form-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 0.8em;
+  color: #9fb3c8;
+}
+.pdb-form-row input,
+.pdb-form-row select {
+  background: #0b1a2e;
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  color: #e6edf3;
+  border-radius: 7px;
+  padding: 8px 10px;
+  font-size: 0.95em;
+  min-width: 170px;
+}
+.pdb-error { color: #ff9a90; font-size: 0.85em; margin-top: 8px; min-height: 1em; }
+
+/* --- profiles grid --- */
+.pdb-profiles-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+.pdb-profile {
+  background: rgba(9, 18, 33, 0.72);
+  border: 1px solid rgba(56, 189, 248, 0.14);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pdb-profile:hover { border-color: rgba(56, 189, 248, 0.4); }
+.pdb-profile-top { display: flex; justify-content: space-between; align-items: flex-start; }
+.pdb-profile-name { font-size: 1.15em; font-weight: 700; color: #ebf8ff; }
+.pdb-profile-meta { font-size: 0.8em; color: #9fb3c8; margin-top: 2px; }
+.pdb-profile-stats { display: flex; gap: 16px; font-size: 0.85em; color: #cfe6f5; }
+.pdb-profile-stats b { color: #26bbff; }
+.pdb-profile-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.pdb-import-form {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  border-top: 1px solid rgba(56, 189, 248, 0.12);
+  padding-top: 10px;
+}
+.pdb-import-form label { display: flex; flex-direction: column; gap: 4px; font-size: 0.72em; color: #9fb3c8; }
+.pdb-import-form input, .pdb-import-form select {
+  background: #0b1a2e; border: 1px solid rgba(56,189,248,0.22); color: #e6edf3;
+  border-radius: 6px; padding: 6px 8px; font-size: 0.85em; width: 92px;
+}
+.pdb-import-form .pdb-import-user { width: 130px; }
+
+.pdb-progress { height: 8px; background: rgba(255,255,255,0.08); border-radius: 5px; overflow: hidden; }
+.pdb-progress-fill { height: 100%; width: 0; background: #26bbff; transition: width 0.3s; }
+.pdb-progress-label { font-size: 0.78em; color: #9fb3c8; margin-top: 4px; }
+
+.pdb-empty { color: #9fb3c8; text-align: center; padding: 30px; }
+
+/* --- dashboard --- */
+.pdb-dash-title { font-size: 1.4em; font-weight: 700; color: #ebf8ff; }
+.pdb-dash-title small { display: block; font-size: 0.5em; color: #9fb3c8; font-weight: 400; margin-top: 2px; }
+
+.pdb-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.pdb-kpi {
+  background: rgba(9, 18, 33, 0.72);
+  border: 1px solid rgba(56, 189, 248, 0.14);
+  border-radius: 12px;
+  padding: 16px;
+}
+.pdb-kpi-value { font-size: 1.8em; font-weight: 700; color: #26bbff; }
+.pdb-kpi-label { font-size: 0.8em; color: #9fb3c8; margin-top: 2px; }
+
+.pdb-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+.pdb-chart-wide { grid-column: span 3; }
+.pdb-canvas-wrap { position: relative; height: 260px; }
+@media (max-width: 1000px) {
+  .pdb-charts-grid { grid-template-columns: 1fr; }
+  .pdb-chart-wide { grid-column: span 1; }
+}
+
+/* --- openings table --- */
+.pdb-openings, .pdb-games { width: 100%; overflow-x: auto; }
+.pdb-table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
+.pdb-table th, .pdb-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.06); white-space: nowrap; }
+.pdb-table th { color: #9fb3c8; font-weight: 600; }
+.pdb-table td.num, .pdb-table th.num { text-align: right; }
+.pdb-wdl { display: inline-flex; gap: 6px; }
+.pdb-wdl .w { color: #96bc4b; }
+.pdb-wdl .d { color: #9fb3c8; }
+.pdb-wdl .l { color: #ff9a90; }
+.pdb-res-win { color: #96bc4b; font-weight: 600; }
+.pdb-res-loss { color: #ff9a90; font-weight: 600; }
+.pdb-res-draw { color: #9fb3c8; font-weight: 600; }
+
+/* --- modal --- */
+.pdb-modal {
+  position: fixed; inset: 0; background: rgba(2, 6, 15, 0.7);
+  display: flex; align-items: center; justify-content: center; z-index: 800;
+}
+.pdb-modal-box {
+  background: #0b1a2e; border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 12px; padding: 22px; max-width: 440px; width: 90%;
+}
+.pdb-modal-box h3 { margin: 0 0 10px; color: #ebf8ff; }
+.pdb-modal-box p { color: #cfe6f5; font-size: 0.9em; line-height: 1.4; }
+.pdb-modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+
+/* --- toast --- */
+.pdb-toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: #0b1a2e; border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #e6edf3; padding: 12px 18px; border-radius: 10px; z-index: 900;
+  font-size: 0.9em; box-shadow: 0 6px 24px rgba(0,0,0,0.4);
+}
+.pdb-toast.err { border-color: rgba(179, 52, 48, 0.5); color: #ff9a90; }

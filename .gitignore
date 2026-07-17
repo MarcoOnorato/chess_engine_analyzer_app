@@ -2,3 +2,11 @@
 /.venv
 /stockfish
 /windows_stockfish/
+__pycache__/
+*.py[cod]
+
+# Player DB (optional feature) — local SQLite data
+/data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

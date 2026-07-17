@@ -5,6 +5,7 @@
 <title>Chess Analysis</title>
 
 <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+<link rel="stylesheet" href="static/nav.css">
 <link rel="stylesheet" href="static/style.css">
 <link rel="stylesheet" href="static/game-loading-modals.css">
 <link rel="stylesheet" href="static/training-modal.css">
@@ -17,6 +18,9 @@
 
 </head>
 <body>
+
+{% set nav_active = 'review' %}
+{% include '_nav.html' %}
 
 <header>
   <h1>♟️ Chess Analysis</h1>

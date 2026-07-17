@@ -26,11 +26,19 @@ RUN pip install --no-cache-dir flask python-chess
 
 # APP WORKDIR
 COPY app.py /app/
+COPY analysis_core.py /app/
+COPY player_db /app/player_db
 COPY templates /app/templates
 COPY static /app/static
 COPY --from=prep /temp_stockfish/ /app/
 
 ENV STOCKFISH_PATH=/app/${STOCKFISH_BINARY}
+
+# Optional Player DB feature. Enabled by default; the SQLite file lives under
+# /app/data — mount a volume there to persist profiles/games across runs.
+# Disable entirely with -e PLAYER_DB_ENABLED=0.
+ENV PLAYER_DB_PATH=/app/data/player_db.sqlite
+RUN mkdir -p /app/data
 
 RUN chmod +x /app/${STOCKFISH_BINARY}
 

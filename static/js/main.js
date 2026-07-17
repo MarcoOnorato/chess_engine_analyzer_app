@@ -87,4 +87,29 @@ window.addEventListener("load", () => {
   // Initial render: empty tree, starting position analysis.
   renderHistory();
   analyzeCurrentPosition();
+
+  // Deep-link from the Players dashboard: /?pgn_game=<id> loads that stored
+  // game's PGN into the Review pipeline via the existing loadAndAnalyze flow.
+  maybeLoadGameFromQuery();
 });
+
+/**
+ * If the URL carries `?pgn_game=<id>`, fetch that game's PGN from the Player DB
+ * and run the standard analysis pipeline on it.
+ */
+async function maybeLoadGameFromQuery() {
+  const params = new URLSearchParams(window.location.search);
+  const gameId = params.get("pgn_game");
+  if (!gameId) return;
+
+  try {
+    const res = await fetch(`/api/players/game/${encodeURIComponent(gameId)}/pgn`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.pgn && window.loadAndAnalyze) {
+      await window.loadAndAnalyze(data.pgn);
+    }
+  } catch (e) {
+    console.error("Failed to load game from Players DB", e);
+  }
+}

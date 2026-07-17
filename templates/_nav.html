@@ -1,0 +1,11 @@
+<nav class="app-nav">
+  <div class="app-nav-inner">
+    <a href="/" class="app-nav-brand">♟️ Chess Analysis</a>
+    <div class="app-nav-links">
+      <a href="/" class="app-nav-link {% if nav_active == 'review' %}active{% endif %}">Review</a>
+      {% if player_db_enabled %}
+      <a href="/players" class="app-nav-link {% if nav_active == 'players' %}active{% endif %}">Players</a>
+      {% endif %}
+    </div>
+  </div>
+</nav>

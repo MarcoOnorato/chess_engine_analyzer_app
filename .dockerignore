@@ -44,7 +44,10 @@ Dockerfile
 # --- Database / Logs ---
 *.log
 *.sqlite
+*.sqlite-wal
+*.sqlite-shm
 *.db
+data/
 
 # --- Others ---
 .env

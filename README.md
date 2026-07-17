@@ -27,6 +27,48 @@ A real-time chess analysis web app powered by Stockfish engine, Flask backend, a
 - Variation tracking (main line vs deviations)  
 - Legal move validation API
 - Chess.com and Lichess support to analyze a player public games
+- **Player DB (optional)** — personal profiles + stats dashboard (see below)
+
+---
+
+## 👤 Player DB (optional feature)
+
+Create personal profiles for any public Lichess / Chess.com player, import their
+N most recent games (analyzed at a depth you choose), and browse an aggregate
+**dashboard**: win rate (overall and by color), openings played, accuracy trend,
+per-phase accuracy, move-quality distribution (Brilliant → Blunder) and more.
+Reach it from the **Players** tab in the top navigation (`/players`).
+
+- Storage is a local **SQLite** file (stdlib `sqlite3`, no extra dependency).
+- Ingestion runs as a **background job** with live progress; you can navigate away.
+- Games are de-duplicated by PGN content, so re-importing the "latest 40" only
+  analyzes what's new. Re-importing at a **different depth** asks before it
+  recomputes existing entries.
+
+It is **enabled by default** and isolated in the `player_db/` package. Turn it
+off with `PLAYER_DB_ENABLED=0` (then `/players` and its API are not mounted and
+no DB file is created).
+
+Config env vars:
+
+| Var | Default | Meaning |
+| --- | --- | --- |
+| `PLAYER_DB_ENABLED` | `1` | `0` to disable the whole feature |
+| `PLAYER_DB_PATH` | `data/player_db.sqlite` | SQLite file location |
+
+**Python:**
+```bash
+# enabled by default
+python app.py
+# or explicitly disable
+PLAYER_DB_ENABLED=0 python app.py
+```
+
+**Docker** — mount a volume at `/app/data` so the DB persists across runs:
+```bash
+docker run --name chess-engine-analyzer -p 5000:5000 \
+  -v chessdb:/app/data chess-engine-analyzer
+```
 
 ---
 
