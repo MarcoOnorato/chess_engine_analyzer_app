@@ -26,6 +26,7 @@ export const api = {
   previewIngest: (id, payload) => request("POST", `/api/players/${id}/ingest/preview`, payload),
   startIngest: (id, payload) => request("POST", `/api/players/${id}/ingest`, payload),
   jobStatus: (jobId) => request("GET", `/api/players/jobs/${jobId}`),
+  cancelJob: (jobId) => request("POST", `/api/players/jobs/${jobId}/cancel`),
   stats: (id, timeClass) =>
     request("GET", `/api/players/${id}/stats${timeClass ? `?time_class=${encodeURIComponent(timeClass)}` : ""}`),
   games: (id) => request("GET", `/api/players/${id}/games`),

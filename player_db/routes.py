@@ -12,8 +12,9 @@ from . import db, ingest, sources, stats
 bp = Blueprint("player_db", __name__)
 
 _VALID_PLATFORMS = ("lichess", "chesscom")
-_MIN_DEPTH, _MAX_DEPTH = 6, 22
+_MIN_DEPTH, _MAX_DEPTH = 6, 30
 _MAX_COUNT = 200
+_ACTIVE_JOB_STATES = ("queued", "running", "cancelling")
 
 
 def _clamp(value: int, low: int, high: int) -> int:
@@ -108,6 +109,20 @@ def job_status(job_id: int) -> Response:
         "total": job["total"],
         "error": job.get("error"),
     })
+
+
+@bp.route("/api/players/jobs/<int:job_id>/cancel", methods=["POST"])
+def cancel_job(job_id: int) -> Response:
+    """Requests cancellation of a running/queued ingest job. Games analyzed so
+    far are kept; the worker stops before the next game."""
+    job = db.get_job(job_id)
+    if job is None:
+        return jsonify({"error": "Job not found"}), 404
+    if job["status"] not in _ACTIVE_JOB_STATES:
+        return jsonify({"status": job["status"], "already_finished": True})
+    ingest.request_cancel(job_id)
+    db.set_job_status(job_id, "cancelling")
+    return jsonify({"status": "cancelling"})
 
 
 # --- DASHBOARD -------------------------------------------------------------

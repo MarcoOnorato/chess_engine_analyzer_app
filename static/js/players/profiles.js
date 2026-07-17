@@ -52,13 +52,16 @@ function cardHtml(p) {
         <button class="pdb-btn pdb-btn-primary pdb-btn-sm" data-act="open">Open dashboard</button>
       </div>
       <div class="pdb-import-form">
-        <label>Games<input class="imp-count" type="number" value="20" min="1" max="200"></label>
-        <label>Depth<input class="imp-depth" type="number" value="14" min="6" max="22"></label>
+        <label>Games<input class="imp-count" type="number" value="10" min="1"></label>
+        <label>Depth<input class="imp-depth" type="number" value="10" min="6" max="30"></label>
         <button class="pdb-btn pdb-btn-ghost pdb-btn-sm" data-act="import">Import games</button>
       </div>
       <div class="pdb-progress-area hidden">
         <div class="pdb-progress"><div class="pdb-progress-fill"></div></div>
-        <div class="pdb-progress-label"></div>
+        <div class="pdb-progress-row">
+          <span class="pdb-progress-label"></span>
+          <button class="pdb-btn pdb-btn-danger pdb-btn-sm pdb-cancel-btn hidden" data-act="cancel">Cancel</button>
+        </div>
       </div>
     </div>`;
 }
@@ -121,17 +124,37 @@ function pollJob(profile, card, jobId, importBtn) {
   const area = card.querySelector(".pdb-progress-area");
   const fill = card.querySelector(".pdb-progress-fill");
   const label = card.querySelector(".pdb-progress-label");
+  const cancelBtn = card.querySelector(".pdb-cancel-btn");
   area.classList.remove("hidden");
+  cancelBtn.classList.remove("hidden");
+  cancelBtn.disabled = false;
   label.textContent = "Queued…";
+
+  cancelBtn.onclick = async () => {
+    cancelBtn.disabled = true;
+    label.textContent = "Cancelling…";
+    try {
+      await api.cancelJob(jobId);
+    } catch (e) {
+      toast(e.message, true);
+      cancelBtn.disabled = false;
+    }
+  };
+
+  const finish = () => {
+    clearInterval(timer);
+    importBtn.disabled = false;
+    cancelBtn.classList.add("hidden");
+    cancelBtn.onclick = null;
+  };
 
   const timer = setInterval(async () => {
     let job;
     try {
       job = await api.jobStatus(jobId);
     } catch (e) {
-      clearInterval(timer);
+      finish();
       toast(e.message, true);
-      importBtn.disabled = false;
       return;
     }
 
@@ -140,17 +163,25 @@ function pollJob(profile, card, jobId, importBtn) {
     const pct = total ? Math.round((done / total) * 100) : (job.status === "running" ? 5 : 0);
     fill.style.width = `${pct}%`;
 
+    if (job.status === "cancelling") {
+      label.textContent = total ? `Cancelling… (${done}/${total})` : "Cancelling…";
+      return;
+    }
     if (job.status === "running" || job.status === "queued") {
       label.textContent = total ? `Analyzing ${done}/${total} games…` : "Fetching games…";
       return;
     }
 
-    clearInterval(timer);
-    importBtn.disabled = false;
+    finish();
     if (job.status === "done") {
       fill.style.width = "100%";
       label.textContent = `Done — ${done} game(s) analyzed.`;
       toast(`Import complete for ${profile.label}.`);
+      loadProfiles();
+      document.dispatchEvent(new CustomEvent("pdb:refresh", { detail: { id: profile.id } }));
+    } else if (job.status === "cancelled") {
+      label.textContent = `Cancelled — ${done} game(s) analyzed.`;
+      toast(`Import cancelled for ${profile.label}.`);
       loadProfiles();
       document.dispatchEvent(new CustomEvent("pdb:refresh", { detail: { id: profile.id } }));
     } else if (job.status === "error") {

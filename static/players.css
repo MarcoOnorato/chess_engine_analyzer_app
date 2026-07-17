@@ -124,7 +124,9 @@ body {
 
 .pdb-progress { height: 8px; background: rgba(255,255,255,0.08); border-radius: 5px; overflow: hidden; }
 .pdb-progress-fill { height: 100%; width: 0; background: #26bbff; transition: width 0.3s; }
-.pdb-progress-label { font-size: 0.78em; color: #9fb3c8; margin-top: 4px; }
+.pdb-progress-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 6px; }
+.pdb-progress-label { font-size: 0.78em; color: #9fb3c8; }
+.pdb-cancel-btn { flex: none; }
 
 .pdb-empty { color: #9fb3c8; text-align: center; padding: 30px; }
 

@@ -28,6 +28,26 @@ _job_queue: "queue.Queue[int]" = queue.Queue()
 _worker_started = False
 _worker_lock = threading.Lock()
 
+# Cooperative cancellation: job ids the user asked to stop. The worker checks
+# this between games and stops early, keeping whatever was already analyzed.
+_cancelled: set = set()
+_cancel_lock = threading.Lock()
+
+
+def request_cancel(job_id: int) -> None:
+    with _cancel_lock:
+        _cancelled.add(job_id)
+
+
+def _is_cancelled(job_id: int) -> bool:
+    with _cancel_lock:
+        return job_id in _cancelled
+
+
+def _clear_cancel(job_id: int) -> None:
+    with _cancel_lock:
+        _cancelled.discard(job_id)
+
 
 # --- fingerprint -----------------------------------------------------------
 
@@ -39,11 +59,12 @@ def fingerprint(pgn: str) -> str:
 
 # --- per-game analysis -----------------------------------------------------
 
-def analyze_game_moves(pgn: str, depth: int) -> Optional[List[Dict[str, Any]]]:
+def analyze_game_moves(pgn: str, depth: int, cancel_check=None) -> Optional[List[Dict[str, Any]]]:
     """
     Analyses a game's main line and returns per-move dicts ready for storage:
     { ply, side, san, uci, fen_before, fen_after, cp_loss, eval, label, phase }.
-    Returns None if the PGN has no usable moves.
+    Returns None if the PGN has no usable moves, or if `cancel_check()` becomes
+    truthy mid-game (the partial game is then abandoned, not stored).
     """
     game = chess.pgn.read_game(io.StringIO(pgn))
     if game is None:
@@ -54,6 +75,8 @@ def analyze_game_moves(pgn: str, depth: int) -> Optional[List[Dict[str, Any]]]:
     ply = 0
 
     for mv in game.mainline_moves():
+        if cancel_check and cancel_check():
+            return None
         ply += 1
         fen_before = board.fen()
         san = board.san(mv)
@@ -183,6 +206,12 @@ def _run_job(job_id: int) -> None:
     depth = int(params.get("depth", 14))
     recompute = bool(params.get("recompute_conflicts", False))
 
+    # Cancelled while still queued: stop before touching the network/engine.
+    if _is_cancelled(job_id):
+        db.set_job_status(job_id, "cancelled")
+        _clear_cancel(job_id)
+        return
+
     db.set_job_status(job_id, "running")
     try:
         records = sources.fetch(platform, username, count)
@@ -196,19 +225,35 @@ def _run_job(job_id: int) -> None:
 
         db.set_job_total(job_id, len(work))
 
+        cancelled = False
         for rec in work:
+            if _is_cancelled(job_id):
+                cancelled = True
+                break
             try:
-                moves = analyze_game_moves(rec.get("pgn", ""), depth)
-                if moves:
-                    _persist_game(profile_id, rec, moves, depth)
+                moves = analyze_game_moves(rec.get("pgn", ""), depth, lambda: _is_cancelled(job_id))
             except Exception as e:  # one bad game must not kill the whole job
                 print(f"[player_db] skipped a game during ingest: {e}")
-            finally:
-                db.bump_job_done(job_id)
+                moves = None
 
-        db.set_job_status(job_id, "done")
+            # analyze_game_moves returns None mid-game when cancelled — that
+            # game is abandoned (not persisted) and must not count as done.
+            if moves is None and _is_cancelled(job_id):
+                cancelled = True
+                break
+
+            if moves:
+                try:
+                    _persist_game(profile_id, rec, moves, depth)
+                except Exception as e:
+                    print(f"[player_db] failed to persist a game: {e}")
+            db.bump_job_done(job_id)
+
+        db.set_job_status(job_id, "cancelled" if cancelled else "done")
     except Exception as e:
         db.set_job_status(job_id, "error", error=str(e))
+    finally:
+        _clear_cancel(job_id)
 
 
 def _worker_loop() -> None:
