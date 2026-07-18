@@ -130,10 +130,18 @@ function renderProfileScreen() {
 
   api.get("/api/players").then((profiles) => {
     list.innerHTML = "";
-    if (!profiles.length) {
+    if (!profiles.some((p) => p.games_count)) {
       list.innerHTML =
-        "<div class='dim'>No tracked profiles yet. Create one in the Players tab " +
-        "and import some games — this flow trains on what is already analyzed there.</div>";
+        "<div class='dim'>" +
+        (profiles.length
+          ? "No analyzed games yet. Import some in the Players tab — "
+          : "No tracked profiles yet. Create one in the Players tab and import some games — ") +
+        "this flow trains on what is already analyzed there.</div>";
+      const go = el("button", "training-cta");
+      go.type = "button";
+      go.textContent = "Go to Players";
+      go.onclick = () => { window.location.href = "/players"; };
+      wrap.appendChild(go);
       return;
     }
     profiles.forEach((p) => {
