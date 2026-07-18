@@ -5,20 +5,23 @@
  *
  * Phases (rendered inside #trainingModal, same overlay as the regular flow):
  *
- *   IMPORT   → user picks a platform (Lichess / Chess.com), enters username
- *              + game count. Fetches raw PGNs.
- *   ANALYSING→ progress bar while the engine runs over all games.
+ *   PROFILE  → user picks one of the tracked Player DB profiles.
+ *   READING  → progress bar while the stored games are read back. This used to
+ *              fetch the last N games from Lichess / Chess.com and run the
+ *              engine over every one of them; now the analysis already exists
+ *              in the database, so nothing is recomputed.
  *   CATEGORY → shows error-type frequencies + lets the user pick which
  *              weakness to drill. "All" = mix of all categories.
  *   LAUNCH   → hands off to the existing training orchestrator with the
  *              assembled ScenarioSpec[].
  *
  * This module only manages the pre-training setup. The actual playing phase
- * reuses the existing `training.js` infrastructure via `launchPlayerSession`.
+ * reuses the existing `training.js` infrastructure.
  */
 
-import { analysePlayerGames, PLAYER_ERROR_TYPES } from "./training-player-analysis.js";
+import { analyseProfileGames, PLAYER_ERROR_TYPES } from "./training-player-analysis.js";
 import { openTrainingModalWithScenarios } from "./training.js";
+import { api } from "./api.js";
 
 /* ─── Constants ──────────────────────────────────────────────────────────── */
 
@@ -56,28 +59,36 @@ const CATEGORY_META = {
 
 /* ─── State ─────────────────────────────────────────────────────────────── */
 
-/** @type {string[]} Fetched PGN strings. */
-let fetchedPgns = [];
+/** @type {{id:number,label:string,games_count:number}|null} Chosen profile. */
+let selectedProfile = null;
 
-/** @type {string} Resolved player username. */
-let resolvedPlayer = "";
+/** How many stored games were read for the current result. */
+let gamesRead = 0;
 
 /** @type {import("./training-player-analysis.js").PlayerAnalysisResult|null} */
 let analysisResult = null;
 
+/** Where to return when the flow is closed (set by the Training hub). */
+let onClose = null;
+
 /* ─── Public entry ───────────────────────────────────────────────────────── */
 
-export function openTrainAsPlayerModal() {
+/**
+ * @param {Object} [opts]
+ * @param {() => void} [opts.onExit] - Called when the user leaves the flow.
+ */
+export function openTrainAsPlayerModal(opts = {}) {
   const modal = document.getElementById(MODAL_ID);
   if (!modal) return;
 
-  fetchedPgns = [];
-  resolvedPlayer = "";
+  selectedProfile = null;
+  gamesRead = 0;
   analysisResult = null;
+  onClose = typeof opts.onExit === "function" ? opts.onExit : null;
 
   modal.classList.remove("hidden");
   setHeader("Train as a Player", closeModal);
-  renderImportScreen();
+  renderProfileScreen();
 }
 
 /* ─── Modal shell helpers ────────────────────────────────────────────────── */
@@ -96,146 +107,68 @@ function setHeader(label, onExit) {
 function closeModal() {
   const modal = document.getElementById(MODAL_ID);
   if (modal) modal.classList.add("hidden");
+  onClose?.();
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Phase 1 — IMPORT
    ═══════════════════════════════════════════════════════════════════════════ */
 
-function renderImportScreen() {
-  setHeader("Import your games", closeModal);
+function renderProfileScreen() {
+  setHeader("Pick a tracked player", closeModal);
   const root = body();
   root.innerHTML = "";
 
   const wrap = el("div", "tap-import-wrap");
-
-  // ── Platform selector ──────────────────────────────────────────────────
-  const platformRow = el("div", "tap-platform-row");
-  let chosenPlatform = "chesscom";
-
-  const platforms = [
-    { id: "chesscom", label: "Chess.com", color: "#69923e" },
-    { id: "lichess",  label: "Lichess",   color: "#aaa" },
-  ];
-
-  const platformBtns = {};
-  platforms.forEach(({ id, label, color }) => {
-    const b = el("button", "tap-platform-btn" + (id === chosenPlatform ? " active" : ""));
-    b.textContent = label;
-    b.style.setProperty("--platform-color", color);
-    b.onclick = () => {
-      chosenPlatform = id;
-      Object.values(platformBtns).forEach((pb) => pb.classList.remove("active"));
-      b.classList.add("active");
-      updateExtraFields();
-      const userInput = qs("#tap-username");
-      userInput?.focus();
-      userInput?.select();
-    };
-    platformBtns[id] = b;
-    platformRow.appendChild(b);
-  });
-  wrap.appendChild(platformRow);
-
-  // ── Username ───────────────────────────────────────────────────────────
-  wrap.appendChild(labeledInput("Username", "tap-username", "text", "Your username…", true));
-
-  // ── Count ─────────────────────────────────────────────────────────────
-  const countField = labeledInput("Number of games to fetch", "tap-count", "number", "5");
-  countField.querySelector("input").min = "1";
-  countField.querySelector("input").max = "50";
-  countField.querySelector("input").value = "5";
-  wrap.appendChild(countField);
-
-  // ── Chess.com extras (year + month) ────────────────────────────────────
-  const extraWrap = el("div", "tap-extra-fields");
-  const now = new Date();
-
-  const yearField = labeledInput("Year",  "tap-cc-year",  "number", String(now.getFullYear()));
-  const monthField = labeledInput("Month", "tap-cc-month", "number", String(now.getMonth() + 1));
-  yearField.querySelector("input").min = "1900";
-  yearField.querySelector("input").max = String(now.getFullYear());
-  monthField.querySelector("input").min = "1";
-  monthField.querySelector("input").max = "12";
-  extraWrap.appendChild(yearField);
-  extraWrap.appendChild(monthField);
-
-  wrap.appendChild(extraWrap);
-
-  function updateExtraFields() {
-    extraWrap.style.display = chosenPlatform === "chesscom" ? "flex" : "none";
-  }
-  updateExtraFields();
-
-  // ── Depth ─────────────────────────────────────────────────────────────
-  const depthField = labeledInput("Engine depth", "tap-depth", "number", "12");
-  depthField.querySelector("input").min = "8";
-  depthField.querySelector("input").max = "30";
-  wrap.appendChild(depthField);
-
-  // ── Error message slot ────────────────────────────────────────────────
   const errBox = el("div", "tap-error hidden");
   wrap.appendChild(errBox);
 
-  // ── Fetch button ──────────────────────────────────────────────────────
-  const fetchBtn = el("button", "training-cta tap-fetch-btn");
-  fetchBtn.textContent = "Fetch games →";
-  fetchBtn.onclick = async () => {
-    errBox.classList.add("hidden");
-    const username = qs("#tap-username")?.value?.trim();
-    const count = parseInt(qs("#tap-count")?.value, 10) || 5;
-    const depth = parseInt(qs("#tap-depth")?.value, 10) || 12;
-
-    if (!username) { showErr(errBox, "Please enter a username."); return; }
-
-    fetchBtn.disabled = true;
-    fetchBtn.textContent = "Fetching…";
-
-    try {
-      let pgns;
-      if (chosenPlatform === "lichess") {
-        pgns = await fetchLichessPgns(username, count);
-      } else {
-        const year  = qs("#tap-cc-year")?.value  || String(now.getFullYear());
-        const month = (qs("#tap-cc-month")?.value || String(now.getMonth() + 1)).padStart(2, "0");
-        pgns = await fetchChessComPgns(username, count, year, month);
-      }
-
-      if (!pgns.length) {
-        showErr(errBox, "No games found. Check the username and date.");
-        fetchBtn.disabled = false;
-        fetchBtn.textContent = "Fetch games →";
-        return;
-      }
-
-      fetchedPgns     = pgns;
-      resolvedPlayer  = username;
-      renderAnalysingScreen(depth);
-
-    } catch (e) {
-      showErr(errBox, e.message || "Network error.");
-      fetchBtn.disabled = false;
-      fetchBtn.textContent = "Fetch games →";
-    }
-  };
-
-  wrap.appendChild(fetchBtn);
+  const list = el("div", "engine-source-list");
+  list.innerHTML = "<div class='dim'>Loading profiles…</div>";
+  wrap.appendChild(list);
   root.appendChild(wrap);
+
+  api.get("/api/players").then((profiles) => {
+    list.innerHTML = "";
+    if (!profiles.length) {
+      list.innerHTML =
+        "<div class='dim'>No tracked profiles yet. Create one in the Players tab " +
+        "and import some games — this flow trains on what is already analyzed there.</div>";
+      return;
+    }
+    profiles.forEach((p) => {
+      const item = el("button", "engine-source-item");
+      item.type = "button";
+      item.disabled = !p.games_count;
+      item.innerHTML =
+        `<span>${escHtml(p.label)}</span>` +
+        `<small>${escHtml([p.platform, p.username].filter(Boolean).join(" · ") || "—")}` +
+        ` • ${p.games_count || 0} games</small>`;
+      item.onclick = () => {
+        selectedProfile = p;
+        renderAnalysingScreen(p);
+      };
+      list.appendChild(item);
+    });
+  }).catch((e) => {
+    showErr(errBox, e.message || "Could not load profiles.");
+    list.innerHTML = "";
+  });
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Phase 2 — ANALYSING
    ═══════════════════════════════════════════════════════════════════════════ */
 
-function renderAnalysingScreen(depth) {
-  setHeader("Analysing your games…", null /* no exit during analysis */);
+function renderAnalysingScreen(profile) {
+  setHeader("Reading stored games…", null /* no exit while it runs */);
   const root = body();
   root.innerHTML = "";
 
   const wrap = el("div", "tap-analysing-wrap");
 
   const label = el("p", "tap-analysing-label");
-  label.textContent = "Starting analysis…";
+  label.textContent = "Loading…";
   wrap.appendChild(label);
 
   const barOuter = el("div", "tap-progress-bar-outer");
@@ -245,27 +178,23 @@ function renderAnalysingScreen(depth) {
   wrap.appendChild(barOuter);
 
   const sub = el("p", "tap-analysing-sub");
-  sub.textContent = `0 / ${fetchedPgns.length} games`;
+  sub.textContent = `0 / ${profile.games_count || 0} games`;
   wrap.appendChild(sub);
 
   root.appendChild(wrap);
 
-  // Kick off analysis asynchronously.
-  analysePlayerGames(
-    fetchedPgns,
-    resolvedPlayer,
-    depth,
-    (done, total, msg) => {
-      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-      barInner.style.width = pct + "%";
-      label.textContent = msg;
-      sub.textContent = `${done} / ${total} games`;
-    }
-  ).then((result) => {
+  // No engine pass: the analysis was done once, when the games were ingested.
+  analyseProfileGames(profile.id, (done, total, msg) => {
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    barInner.style.width = pct + "%";
+    label.textContent = msg;
+    sub.textContent = `${done} / ${total} games`;
+  }).then((result) => {
     analysisResult = result;
+    gamesRead = result.totalGames ?? (profile.games_count || 0);
     renderCategoryScreen();
   }).catch((e) => {
-    root.innerHTML = `<div class="tap-error-full">Analysis failed: ${escHtml(e.message)}</div>`;
+    root.innerHTML = `<div class="tap-error-full">Could not read the stored games: ${escHtml(e.message)}</div>`;
     setHeader("Error", closeModal);
   });
 }
@@ -286,12 +215,12 @@ export function renderCategoryScreen() {
   if (totalErrors === 0) {
     wrap.innerHTML = `
       <div class="training-empty">
-        <p>No significant errors found in the analysed games.</p>
-        <p class="dim">Try fetching more games or lowering the engine depth.</p>
+        <p>No significant errors found in this profile's stored games.</p>
+        <p class="dim">Import more games for it in the Players tab, or pick another profile.</p>
       </div>`;
     const back = el("button", "");
     back.textContent = "← Back";
-    back.onclick = renderImportScreen;
+    back.onclick = renderProfileScreen;
     wrap.appendChild(back);
     root.appendChild(wrap);
     return;
@@ -299,11 +228,23 @@ export function renderCategoryScreen() {
 
   // ── Summary banner ───────────────────────────────────────────────────
   const banner = el("div", "tap-summary-banner");
+  const stale = analysisResult.staleGames || 0;
   banner.innerHTML = `
-    <span class="tap-summary-player">📊 ${escHtml(resolvedPlayer)}</span>
-    <span class="tap-summary-games">${fetchedPgns.length} games • ${totalErrors} errors found</span>
+    <span class="tap-summary-player">📊 ${escHtml(selectedProfile?.label || "Player")}</span>
+    <span class="tap-summary-games">${gamesRead} stored games • ${totalErrors} errors found</span>
   `;
   wrap.appendChild(banner);
+
+  // Games ingested before the best-move columns existed can only reach the
+  // categories that don't need the engine's preferred move — say so rather
+  // than silently under-reporting.
+  if (stale > 0) {
+    const note = el("div", "tap-analysing-sub");
+    note.textContent =
+      `${stale} game(s) were ingested before best moves were stored: their errors can only ` +
+      `be sorted as missed mates or missed tactics. Re-import them to classify them fully.`;
+    wrap.appendChild(note);
+  }
 
   // ── Category cards ───────────────────────────────────────────────────
   const grid = el("div", "tap-category-grid");
@@ -366,8 +307,8 @@ export function renderCategoryScreen() {
 
   // ── Back button ──────────────────────────────────────────────────────
   const back = el("button", "tap-back-btn");
-  back.textContent = "← Fetch different games";
-  back.onclick = renderImportScreen;
+  back.textContent = "← Pick another player";
+  back.onclick = renderProfileScreen;
   wrap.appendChild(back);
 
   root.appendChild(wrap);
@@ -396,7 +337,7 @@ function launchCategory(catId) {
 
   if (!scenarios.length) return;
 
-  // Determine the user's dominant color across fetched games.
+  // Determine the profile's dominant colour across the stored games.
   // Each spec carries userColor — pick the majority.
   const colorCounts = { white: 0, black: 0 };
   scenarios.forEach((s) => { colorCounts[s.userColor]++; });
@@ -409,6 +350,7 @@ function launchCategory(catId) {
       ? CATEGORY_META[catId]?.label ?? "Player Training"
       : "Mixed Training",
     onBack: renderCategoryScreen,
+    onExit: () => { closeModal(); },
   });
 }
 
@@ -425,70 +367,6 @@ function interleave(arrays) {
     });
   }
   return result;
-}
-
-/* ─── Platform fetchers ──────────────────────────────────────────────────── */
-
-/**
- * Fetches PGN strings from the Lichess API (NDJSON games endpoint).
- * @param {string} username
- * @param {number} count
- * @returns {Promise<string[]>}
- */
-async function fetchLichessPgns(username, count) {
-  const res = await fetch(
-    `https://lichess.org/api/games/user/${encodeURIComponent(username)}?max=${count}&pgnInJson=true`,
-    { headers: { Accept: "application/x-ndjson" } }
-  );
-  if (!res.ok) throw new Error("Lichess: user not found or API error.");
-
-  const text = await res.text();
-  const lines = text.split("\n").filter((l) => l.trim());
-  return lines
-    .map((l) => { try { return JSON.parse(l); } catch { return null; } })
-    .filter(Boolean)
-    .map((g) => g.pgn)
-    .filter(Boolean);
-}
-
-/**
- * Fetches PGN strings from the Chess.com API.
- * Chess.com returns games only for a specific YYYY/MM archive; if we need
- * more than the archive contains we walk back month by month.
- *
- * @param {string} username
- * @param {number} count
- * @param {string} year
- * @param {string} month  zero-padded
- * @returns {Promise<string[]>}
- */
-async function fetchChessComPgns(username, count, year, month) {
-  const pgns = [];
-  let yyyy = parseInt(year, 10);
-  let mm   = parseInt(month, 10);
-
-  // Walk back up to 6 months to collect enough games.
-  for (let attempt = 0; attempt < 6 && pgns.length < count; attempt++) {
-    const mm2 = String(mm).padStart(2, "0");
-    const url = `https://api.chess.com/pub/player/${encodeURIComponent(username)}/games/${yyyy}/${mm2}`;
-    try {
-      const res = await fetch(url);
-      if (!res.ok) break;
-      const data = await res.json();
-      const batch = (data.games || [])
-        .reverse()                     // newest first
-        .filter((g) => g.pgn)
-        .map((g) => g.pgn);
-      pgns.push(...batch);
-    } catch {
-      break;
-    }
-    // Previous month.
-    mm--;
-    if (mm < 1) { mm = 12; yyyy--; }
-  }
-
-  return pgns.slice(0, count);
 }
 
 /* ─── DOM helpers ────────────────────────────────────────────────────────── */

@@ -10,6 +10,8 @@
  * their public API so no backend proxy is needed.
  */
 
+import { submitOnEnter } from "./form-enter.js";
+
 /**
  * Wires up the Chess.com modal: open, close, fetch, and game selection.
  */
@@ -33,12 +35,7 @@ export function bindChessCom() {
   document.getElementById("closeChessCom").onclick = () =>
     modal.classList.add("hidden");
 
-  usernameInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      fetchBtn.click();
-    }
-  });
+  submitOnEnter([usernameInput, "ccYear", "ccMonth"], fetchBtn);
 
   modal.addEventListener("click", (e) => {
     if (e.target === modal) {

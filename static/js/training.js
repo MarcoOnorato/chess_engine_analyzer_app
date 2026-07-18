@@ -69,6 +69,9 @@ let boardCtx = null;
 let outcomes = [];
 let positionListBackDest = "config";
 
+/** Where "exit training" hands control back to, when the opener set one. */
+let exitDestination = null;
+
 /**
  * Navigable history cursor.
  *
@@ -86,18 +89,25 @@ let viewIndex = -1;
    Public entry
    ========================================================================== */
 
-/** Backwards-compatible alias used by pgn.js. */
-export function renderTrainingModal() {
-  openTrainingModal();
-}
-
-export function openTrainingModal() {
+/**
+ * Opens the training overlay on the mode-select screen. The game to train on
+ * must already be in `state` (see training-game.js / training-load.js).
+ *
+ * @param {Object} [opts]
+ * @param {"white"|"black"} [opts.userColor] - Pre-selected side; the Player DB
+ *   knows which colour the profile played, so the config screen can start on
+ *   the right one instead of always defaulting to white.
+ * @param {() => void} [opts.onExit] - Where "exit training" goes back to.
+ */
+export function openTrainingModal(opts = {}) {
   const modal = document.getElementById("trainingModal");
   if (!modal) {
     console.error("trainingModal element missing from DOM");
     return;
   }
   session = createSession();
+  if (opts.userColor) session.userColor = opts.userColor;
+  exitDestination = typeof opts.onExit === "function" ? opts.onExit : null;
   outcomes = [];
   modal.classList.remove("hidden");
   goToPhase(PHASES.MODE_SELECT);
@@ -110,11 +120,12 @@ export function openTrainingModal() {
  *
  * @param {{ scenarios: ScenarioSpec[], userColor: "white"|"black", label: string }} opts
  */
-export function openTrainingModalWithScenarios({ scenarios, userColor, label, onBack }) {
+export function openTrainingModalWithScenarios({ scenarios, userColor, label, onBack, onExit }) {
   const modal = document.getElementById("trainingModal");
   if (!modal) return;
- 
+
   session = createSession();
+  exitDestination = typeof onExit === "function" ? onExit : null;
   outcomes = [];
  
   // Skip MODE_SELECT / CONFIG / POSITION_LIST:
@@ -282,6 +293,10 @@ async function startScenario(idx) {
     orientation: session.userColor,   // now always correct for this scenario
     onUserMove: handleUserMove,
     isLive: () => viewIndex === -1,
+    // The board stays locked until the engine has judged the position: a move
+    // played before that would be scored against the previous position's top
+    // moves, i.e. rejected even when correct, with stale hints to match.
+    canMove: () => session?.userToMove === true,
   });
 
   clearCheckHighlight();
@@ -396,6 +411,10 @@ function filterAcceptableMoves(moves, config, userColor, isMateScenario = false)
 }
 
 async function primeBaselineAndExpected() {
+  // The board is locked for as long as this runs (see `canMove` on the mount);
+  // say why, so the wait doesn't read as the app ignoring the user.
+  session.userToMove = false;
+  setStatus("Engine analyzing this position…", { tone: "info" });
   try {
     const data = await fetchEngineMoves(session.fen);
     const spec = session.positions[session.currentPositionIdx];
@@ -790,6 +809,20 @@ function exitTraining() {
   outcomes = [];
   session = null;
 
+  leaveModal();
+}
+
+/**
+ * Closes the overlay, or hands back to whoever opened it (the Training hub
+ * sends the user to its own start screen rather than an empty page).
+ */
+function leaveModal() {
+  const dest = exitDestination;
+  exitDestination = null;
+  if (dest) {
+    dest();
+    return;
+  }
   const modal = document.getElementById("trainingModal");
   if (modal) modal.classList.add("hidden");
 }
@@ -812,8 +845,7 @@ function exitTrainingNoConfirm() {
   outcomes = [];
   session  = null;
   positionListBackDest = "config"; // reset for next time
-  const modal = document.getElementById("trainingModal");
-  if (modal) modal.classList.add("hidden");
+  leaveModal();
 }
 
 /* ==========================================================================

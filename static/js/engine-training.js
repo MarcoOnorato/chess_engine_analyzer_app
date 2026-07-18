@@ -1,12 +1,20 @@
 /**
  * @fileoverview Free-play training against the engine.
  *
- * Sources: new game, current loaded main line, opening, pasted PGN, Lichess,
- * and Chess.com. The selected ply becomes the starting position.
+ * The game to start from comes from the shared picker in `training-source.js`;
+ * the selected ply becomes the starting position.
  */
 
-import { STARTING_FEN, mainLineNodes, state } from "./state.js";
-import { api } from "./api.js";
+import {
+  SOURCES,
+  renderSourcePicker,
+  submitOnEnter,
+  el,
+  escapeHtml,
+  labeledInput,
+  selectField,
+  showErr,
+} from "./training-source.js";
 import {
   mountTrainingBoard,
   fetchEngineMoves,
@@ -50,6 +58,9 @@ const DIFFICULTIES = {
 let boardCtx = null;
 let session = null;
 let hintVisible = false;
+
+/** Where to return when the flow is closed (set by the Training hub). */
+let onClose = null;
 
 /* ==========================================================================
    Local game tree (isolated from the main analysis board's state)
@@ -122,10 +133,15 @@ function etPurgeIndex(node) {
   for (const c of node.children) etPurgeIndex(c);
 }
 
-export function openEngineTrainingModal() {
+/**
+ * @param {Object} [opts]
+ * @param {() => void} [opts.onExit] - Called when the user leaves the flow.
+ */
+export function openEngineTrainingModal(opts = {}) {
   const modal = document.getElementById("trainingModal");
   if (!modal) return;
 
+  onClose = typeof opts.onExit === "function" ? opts.onExit : null;
   cleanupBoard();
   session = null;
   modal.classList.remove("hidden");
@@ -144,40 +160,17 @@ function renderSetupScreen() {
   const wrap = el("div", "tap-import-wrap");
   wrap.style.maxWidth = "760px";
 
-  const sourceRow = el("div", "tap-platform-row");
-  sourceRow.style.flexWrap = "wrap";
-  const sources = [
-    { id: "new", label: "New game" },
-    { id: "current", label: "Loaded game" },
-    { id: "opening", label: "Opening" },
-    { id: "pgn", label: "Paste PGN" },
-    { id: "lichess", label: "Lichess" },
-    { id: "chesscom", label: "Chess.com" },
-  ];
-  const sourceBtns = {};
-  let source = "new";
-
-  sources.forEach(({ id, label }) => {
-    const b = el("button", "tap-platform-btn" + (id === source ? " active" : ""));
-    b.textContent = label;
-    b.style.setProperty("--platform-color", "#26bbff");
-    b.onclick = () => {
-      source = id;
-      Object.values(sourceBtns).forEach((btn) => btn.classList.remove("active"));
-      b.classList.add("active");
-      clearSelectedPgn();
-      renderSourceFields(sourceFields, source);
-    };
-    sourceBtns[id] = b;
-    sourceRow.appendChild(b);
+  const sourceRoot = el("div", "");
+  wrap.appendChild(sourceRoot);
+  // Any game works here — a stored analysis buys nothing, the engine plays on
+  // from the position rather than judging the moves already made.
+  const picker = renderSourcePicker(sourceRoot, {
+    sources: [
+      SOURCES.NEW, SOURCES.REVIEW, SOURCES.PLAYER_DB,
+      SOURCES.OPENING, SOURCES.PGN, SOURCES.LICHESS, SOURCES.CHESSCOM,
+    ],
+    initial: SOURCES.NEW,
   });
-  wrap.appendChild(sourceRow);
-
-  const sourceFields = el("div", "tap-import-wrap");
-  sourceFields.style.maxWidth = "100%";
-  sourceFields.style.padding = "0";
-  renderSourceFields(sourceFields, source);
-  wrap.appendChild(sourceFields);
 
   const configGrid = el("div", "tap-extra-fields");
   configGrid.appendChild(selectField("Side to play", "et-side", [
@@ -212,7 +205,7 @@ function renderSetupScreen() {
     start.disabled = true;
     start.textContent = "Preparing…";
     try {
-      const sourceData = await resolveSource(source);
+      const sourceData = await picker.resolve();
       const side = document.getElementById("et-side").value;
       const difficultyId = document.getElementById("et-difficulty").value;
       const maxPly = Math.max(0, sourceData.fens.length - 1);
@@ -246,114 +239,9 @@ function renderSetupScreen() {
   actions.appendChild(cancel);
   actions.appendChild(start);
   wrap.appendChild(actions);
+  submitOnEnter([startPlyField], start);
 
   root.appendChild(wrap);
-}
-
-function renderSourceFields(root, source) {
-  root.innerHTML = "";
-
-  if (source === "new") {
-    root.appendChild(infoBox("Start from the normal initial position. Ply 0 is a new game."));
-    return;
-  }
-
-  if (source === "current") {
-    const count = mainLineNodes().length;
-    root.appendChild(infoBox(
-      count > 0
-        ? `Use the currently loaded main line. Available ply range: 0-${count}.`
-        : "No PGN/opening is currently loaded. This will fall back to a new game."
-    ));
-    return;
-  }
-
-  if (source === "opening") {
-    root.appendChild(labeledInput("Opening search", "et-opening-search", "text", "Type part of the opening name…"));
-    const list = el("div", "engine-source-list");
-    list.id = "et-opening-list";
-    list.innerHTML = "<div class='dim'>Type to search openings.</div>";
-    root.appendChild(list);
-    document.getElementById("et-opening-search").addEventListener("input", renderOpeningChoices);
-    loadOpeningCache().then(renderOpeningChoices).catch(() => {
-      list.innerHTML = "<div class='tap-error'>Could not load openings.</div>";
-    });
-    return;
-  }
-
-  if (source === "pgn") {
-    root.appendChild(labeledTextarea("PGN", "et-pgn", "Paste a PGN here…"));
-    return;
-  }
-
-  if (source === "lichess") {
-    root.appendChild(labeledInput("Lichess username", "et-li-user", "text", "username"));
-    const count = labeledInput("Games to show", "et-li-count", "number", "10");
-    count.querySelector("input").value = "10";
-    root.appendChild(count);
-    root.appendChild(fetchListButton("Fetch Lichess games", fetchLichessChoices));
-    root.appendChild(gameList("et-remote-games"));
-    return;
-  }
-
-  if (source === "chesscom") {
-    root.appendChild(labeledInput("Chess.com username", "et-cc-user", "text", "username"));
-    const extras = el("div", "tap-extra-fields");
-    const now = new Date();
-    const year = labeledInput("Year", "et-cc-year", "number", String(now.getFullYear()));
-    const month = labeledInput("Month", "et-cc-month", "number", String(now.getMonth() + 1));
-    year.querySelector("input").value = String(now.getFullYear());
-    month.querySelector("input").value = String(now.getMonth() + 1);
-    extras.appendChild(year);
-    extras.appendChild(month);
-    root.appendChild(extras);
-    root.appendChild(fetchListButton("Fetch Chess.com games", fetchChessComChoices));
-    root.appendChild(gameList("et-remote-games"));
-  }
-}
-
-async function resolveSource(source) {
-  if (source === "new") {
-    return { label: "New game", startFen: STARTING_FEN, fens: [STARTING_FEN], moves: [] };
-  }
-
-  if (source === "current") {
-    const nodes = mainLineNodes();
-    if (!nodes.length) return resolveSource("new");
-    return {
-      label: "Loaded game",
-      startFen: state.root.fenAfter,
-      fens: [state.root.fenAfter, ...nodes.map((n) => n.fenAfter)],
-      moves: nodes.map((n) => ({ san: n.san, uci: n.uci })),
-    };
-  }
-
-  if (source === "opening") {
-    const pgn = document.getElementById("et-selected-pgn")?.value || "";
-    if (!pgn) throw new Error("Select an opening first.");
-    return parsePgnSource(pgn, "Opening");
-  }
-
-  if (source === "pgn") {
-    const pgn = document.getElementById("et-pgn")?.value?.trim();
-    if (!pgn) throw new Error("Paste a PGN first.");
-    return parsePgnSource(pgn, "PGN");
-  }
-
-  const selected = document.getElementById("et-selected-pgn")?.value || "";
-  if (!selected) throw new Error("Fetch and select a game first.");
-  return parsePgnSource(selected, source === "lichess" ? "Lichess game" : "Chess.com game");
-}
-
-async function parsePgnSource(pgn, label) {
-  const data = await api("/api/load_pgn", { pgn });
-  const startFen = data.start_fen || data.fens?.[0] || STARTING_FEN;
-  return {
-    label,
-    startFen,
-    fens: data.fens?.length ? data.fens : [startFen],
-    moves: data.moves || [],
-  };
 }
 
 function renderPlayScreen() {
@@ -814,222 +702,10 @@ function close() {
   session = null;
   const modal = document.getElementById("trainingModal");
   if (modal) modal.classList.add("hidden");
-}
-
-async function loadOpeningCache() {
-  if (state.cachedOpenings && Object.keys(state.cachedOpenings).length) return state.cachedOpenings;
-  const res = await fetch("/api/list_openings");
-  if (!res.ok) throw new Error("Opening list failed");
-  state.cachedOpenings = await res.json();
-  return state.cachedOpenings;
-}
-
-function renderOpeningChoices() {
-  const list = document.getElementById("et-opening-list");
-  const query = (document.getElementById("et-opening-search")?.value || "").toLowerCase();
-  if (!list) return;
-  list.innerHTML = "";
-
-  const entries = Object.entries(state.cachedOpenings || {})
-    .filter(([name]) => name.toLowerCase().includes(query))
-    .slice(0, 30);
-
-  if (!entries.length) {
-    list.innerHTML = "<div class='dim'>No openings found.</div>";
-    return;
-  }
-
-  ensureSelectedPgnInput();
-  entries.forEach(([name, pgn]) => {
-    const pgnString = Array.isArray(pgn) ? pgn[0] : pgn;
-    const item = el("button", "engine-source-item");
-    item.type = "button";
-    item.innerHTML = `<span>${escapeHtml(name)}</span><small>${escapeHtml(String(pgnString).slice(0, 80))}…</small>`;
-    item.onclick = () => {
-      document.getElementById("et-selected-pgn").value = pgnString;
-      list.querySelectorAll(".engine-source-item").forEach((n) => n.classList.remove("active"));
-      item.classList.add("active");
-    };
-    list.appendChild(item);
-  });
-}
-
-async function fetchLichessChoices() {
-  const username = document.getElementById("et-li-user")?.value?.trim();
-  const count = document.getElementById("et-li-count")?.value || "10";
-  if (!username) return;
-  const list = document.getElementById("et-remote-games");
-  list.innerHTML = "<div class='dim'>Fetching…</div>";
-  const res = await fetch(
-    `https://lichess.org/api/games/user/${encodeURIComponent(username)}?max=${encodeURIComponent(count)}&pgnInJson=true`,
-    { headers: { Accept: "application/x-ndjson" } }
-  );
-  if (!res.ok) throw new Error("Lichess fetch failed");
-  const text = await res.text();
-  const games = text.split("\n").filter(Boolean).map((line) => JSON.parse(line)).filter((g) => g.pgn);
-  renderRemoteGames(games.map((g) => ({
-    pgn: g.pgn,
-    label: `${g.players.white.user?.name || "Anonymous"} vs ${g.players.black.user?.name || "Anonymous"}`,
-    meta: `${new Date(g.createdAt).toLocaleDateString()} • ${g.speed} • ${g.variant}`,
-  })));
-}
-
-async function fetchChessComChoices() {
-  const username = document.getElementById("et-cc-user")?.value?.trim();
-  const year = document.getElementById("et-cc-year")?.value;
-  const month = String(document.getElementById("et-cc-month")?.value || "").padStart(2, "0");
-  if (!username || !year || !month) return;
-  const list = document.getElementById("et-remote-games");
-  list.innerHTML = "<div class='dim'>Fetching…</div>";
-  const res = await fetch(
-    `https://api.chess.com/pub/player/${encodeURIComponent(username)}/games/${year}/${month}`
-  );
-  if (!res.ok) throw new Error("Chess.com fetch failed");
-  const data = await res.json();
-  const games = (data.games || []).reverse().filter((g) => g.pgn);
-  renderRemoteGames(games.map((g) => ({
-    pgn: g.pgn,
-    label: `${g.white.username} vs ${g.black.username}`,
-    meta: `${new Date(g.end_time * 1000).toLocaleDateString()} • ${g.time_class}`,
-  })));
-}
-
-function renderRemoteGames(games) {
-  const list = document.getElementById("et-remote-games");
-  list.innerHTML = "";
-  ensureSelectedPgnInput();
-  if (!games.length) {
-    list.innerHTML = "<div class='dim'>No games found.</div>";
-    return;
-  }
-  games.forEach((g) => {
-    const item = el("button", "engine-source-item");
-    item.type = "button";
-    item.innerHTML = `<span>${escapeHtml(g.label)}</span><small>${escapeHtml(g.meta)}</small>`;
-    item.onclick = () => {
-      document.getElementById("et-selected-pgn").value = g.pgn;
-      list.querySelectorAll(".engine-source-item").forEach((n) => n.classList.remove("active"));
-      item.classList.add("active");
-    };
-    list.appendChild(item);
-  });
-}
-
-function ensureSelectedPgnInput() {
-  if (document.getElementById("et-selected-pgn")) return;
-  const input = el("input", "");
-  input.type = "hidden";
-  input.id = "et-selected-pgn";
-  body().appendChild(input);
-}
-
-function clearSelectedPgn() {
-  const existing = document.getElementById("et-selected-pgn");
-  if (existing) existing.remove();
-}
-
-function fetchListButton(label, fn) {
-  const btn = el("button", "training-cta tap-fetch-btn");
-  btn.type = "button";
-  btn.textContent = label;
-  btn.onclick = async () => {
-    btn.disabled = true;
-    const old = btn.textContent;
-    btn.textContent = "Fetching…";
-    try {
-      await fn();
-    } catch (e) {
-      const list = document.getElementById("et-remote-games");
-      if (list) list.innerHTML = `<div class="tap-error">Error: ${escapeHtml(e.message)}</div>`;
-    } finally {
-      btn.disabled = false;
-      btn.textContent = old;
-    }
-  };
-  return btn;
-}
-
-function gameList(id) {
-  const list = el("div", "engine-source-list");
-  list.id = id;
-  list.innerHTML = "<div class='dim'>Fetch games, then select one.</div>";
-  return list;
-}
-
-function infoBox(text) {
-  const div = el("div", "training-fieldset");
-  div.textContent = text;
-  return div;
-}
-
-function selectField(label, id, options, value) {
-  const wrap = el("div", "tap-field");
-  const lbl = el("label", "tap-label");
-  lbl.textContent = label;
-  lbl.htmlFor = id;
-  const sel = el("select", "tap-input");
-  sel.id = id;
-  options.forEach(([val, text]) => {
-    const opt = el("option", "");
-    opt.value = val;
-    opt.textContent = text;
-    if (val === value) opt.selected = true;
-    sel.appendChild(opt);
-  });
-  wrap.appendChild(lbl);
-  wrap.appendChild(sel);
-  return wrap;
-}
-
-function labeledInput(labelText, id, type, placeholder) {
-  const wrap = el("div", "tap-field");
-  const lbl = el("label", "tap-label");
-  lbl.textContent = labelText;
-  lbl.htmlFor = id;
-  const inp = el("input", "tap-input");
-  inp.id = id;
-  inp.type = type;
-  inp.placeholder = placeholder;
-  wrap.appendChild(lbl);
-  wrap.appendChild(inp);
-  return wrap;
-}
-
-function labeledTextarea(labelText, id, placeholder) {
-  const wrap = el("div", "tap-field");
-  const lbl = el("label", "tap-label");
-  lbl.textContent = labelText;
-  lbl.htmlFor = id;
-  const txt = el("textarea", "tap-input");
-  txt.id = id;
-  txt.rows = 8;
-  txt.placeholder = placeholder;
-  wrap.appendChild(lbl);
-  wrap.appendChild(txt);
-  return wrap;
-}
-
-function showErr(box, msg) {
-  box.textContent = msg;
-  box.classList.remove("hidden");
-}
-
-function el(tag, className) {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  return node;
+  onClose?.();
 }
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function escapeHtml(s) {
-  return String(s ?? "").replace(/[&<>"']/g, (c) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;",
-  })[c]);
-}

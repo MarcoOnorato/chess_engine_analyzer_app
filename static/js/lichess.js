@@ -7,6 +7,8 @@
  * PGN into `#pgnInput` and triggers the standard PGN-loading flow.
  */
 
+import { submitOnEnter } from "./form-enter.js";
+
 /**
  * Wires up the Lichess modal: open, close, fetch, and game selection.
  */
@@ -25,12 +27,7 @@ export function bindLichess() {
     document.getElementById("closeLichess").onclick = () =>
       modal.classList.add("hidden");
 
-    usernameInput.addEventListener("keydown", (event) => {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          fetchBtn.click();
-        }
-      });
+    submitOnEnter([usernameInput, "liCount"], fetchBtn);
 
     modal.addEventListener("click", (e) => {
       if (e.target === modal) {

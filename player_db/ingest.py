@@ -92,6 +92,9 @@ def analyze_game_moves(pgn: str, depth: int, cancel_check=None) -> Optional[List
         )
         classification = result.get("classification") or {}
         label = classification.get("label")
+        # Engine's preferred continuation from the resulting position; the
+        # training categoriser reads it off the previous ply.
+        best = (result.get("top_moves") or [{}])[0]
 
         moves.append({
             "ply": ply,
@@ -102,6 +105,11 @@ def analyze_game_moves(pgn: str, depth: int, cancel_check=None) -> Optional[List
             "fen_after": fen_after,
             "cp_loss": max(0.0, float(result.get("best_eval_loss") or 0.0)),
             "eval": result.get("eval"),
+            "eval_mate": result.get("eval_mate"),
+            "best_uci": best.get("uci"),
+            "best_san": best.get("san"),
+            "best_score": best.get("score"),
+            "best_mate": best.get("mate"),
             "label": label,
             "opening": result.get("opening"),
             "phase": None,
@@ -136,7 +144,9 @@ def _persist_game(profile_id: int, record: Dict[str, Any], moves: List[Dict[str,
     game_id = db.upsert_game(profile_id, meta, aggregates)
     # persisted move rows don't carry 'opening'
     move_rows = [{k: m[k] for k in
-                  ("ply", "side", "san", "uci", "fen_before", "fen_after", "cp_loss", "eval", "label", "phase")}
+                  ("ply", "side", "san", "uci", "fen_before", "fen_after", "cp_loss", "eval",
+                   "eval_mate", "best_uci", "best_san", "best_score", "best_mate",
+                   "label", "phase")}
                  for m in moves]
     db.replace_moves(game_id, move_rows)
 

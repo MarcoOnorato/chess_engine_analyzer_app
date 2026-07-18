@@ -45,6 +45,17 @@ const LABEL_ORDER = [
   { label: "Blunder", symbol: "??", color: "#b33430" },
 ];
 
+/**
+ * Symbol + colour for a classification label. Used to rebuild `evalData` for
+ * games replayed from a stored Player DB analysis, which only persists labels.
+ * @param {string} label
+ * @returns {{symbol: string, color: string}}
+ */
+export function labelStyle(label) {
+  const hit = LABEL_ORDER.find((l) => l.label === label);
+  return hit ? { symbol: hit.symbol, color: hit.color } : { symbol: "", color: "" };
+}
+
 /** Control points for the ACPL → estimated-Elo curve (piecewise linear). */
 const ELO_CURVE = [
   [0, 2900], [5, 2700], [10, 2500], [15, 2300], [20, 2100],

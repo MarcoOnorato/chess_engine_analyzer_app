@@ -134,6 +134,35 @@ body {
 .pdb-dash-title { font-size: 1.4em; font-weight: 700; color: #ebf8ff; }
 .pdb-dash-title small { display: block; font-size: 0.5em; color: #9fb3c8; font-weight: 400; margin-top: 2px; }
 
+/* Depth picker above the recent-games table. */
+.pdb-review-depth {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px;
+}
+.pdb-review-depth label {
+  display: flex; align-items: center; gap: 8px; font-size: 0.85em; color: #9fb3c8;
+}
+.pdb-review-depth input {
+  background: #0b1a2e; border: 1px solid rgba(56,189,248,0.22); color: #e6edf3;
+  border-radius: 6px; padding: 6px 8px; font-size: 0.9em; width: 70px; text-align: center;
+}
+.pdb-hint { font-size: 0.78em; color: #6b8299; }
+
+/* Ingest still running while the dashboard is being browsed. */
+.pdb-job-banner {
+  display: flex; align-items: center; gap: 10px;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  border-radius: 8px; padding: 8px 12px; margin-bottom: 14px;
+  font-size: 0.85em; color: #9fb3c8;
+}
+.pdb-job-banner #dashJobCancel { margin-left: auto; }
+.pdb-job-spinner {
+  width: 12px; height: 12px; flex: none; border-radius: 50%;
+  border: 2px solid rgba(38, 187, 255, 0.25); border-top-color: #26bbff;
+  animation: pdb-spin 0.8s linear infinite;
+}
+@keyframes pdb-spin { to { transform: rotate(360deg); } }
+
 .pdb-tc-filter {
   display: flex;
   flex-wrap: wrap;

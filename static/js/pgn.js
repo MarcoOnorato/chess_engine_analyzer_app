@@ -32,9 +32,9 @@ import { renderHistory, jumpToMainLineIndex, scrollHistoryToCurrentMove } from "
 import { updatePgnNav } from "./navigation.js";
 import { analyzeCurrentPosition } from "./analysis.js";
 import { calculateGameAccuracy, renderEvalChart } from "./accuracy.js";
-import { renderGameReview } from "./game-review.js";
+import { renderGameReview, labelStyle } from "./game-review.js";
 import { collapseLoadPanel } from "./collapsible.js";
-import { renderTrainingModal } from "./training.js";
+import { publishReviewGame } from "./training-handoff.js";
 import { loadFromCurrentNode } from "./board-arrows.js";
 import { clearBoardSelection } from "./board.js";
 
@@ -50,13 +50,13 @@ export function bindPgnLoader() {
     if (e.target === modal) modal.style.display = "none";
   });
 
-  window.loadAndAnalyze = async (pgnString) => {
+  window.loadAndAnalyze = async (pgnString, stored = null) => {
     modal.style.display = "none";
-  
+
     await new Promise((resolve) => requestAnimationFrame(resolve));
-  
-    const success = await loadPgn(pgnString);
-  
+
+    const success = await loadPgn(pgnString, stored);
+
     if (success) {
       pgnInput.value = "";
     }
@@ -92,7 +92,7 @@ export function bindPgnLoader() {
  * @param {string|null} directPgn - Optional PGN; if null, reads from #pgnInput.
  * @returns {Promise<boolean>}
  */
-export async function loadPgn(directPgn = null) {
+export async function loadPgn(directPgn = null, stored = null) {
   const txt = directPgn
     ? directPgn.trim()
     : document.getElementById("pgnInput").value.trim();
@@ -112,7 +112,9 @@ export async function loadPgn(directPgn = null) {
     state.whitePlayer && state.blackPlayer
       ? `⚪ ${state.whitePlayer} vs ⚫ ${state.blackPlayer} — `
       : "";
-  state.currentOpeningName = "Starting Position";
+  // A stored analysis has no per-ply opening names, but the game row keeps the
+  // opening detected at ingest time.
+  state.currentOpeningName = (stored && stored.opening) || "Starting Position";
 
   const depth = parseInt(document.getElementById("depth").value, 10) || 11;
   const overlay = document.getElementById("loadingOverlay");
@@ -144,7 +146,7 @@ export async function loadPgn(directPgn = null) {
 
     // --- 3. Analyze every node (dedup'd by fenAfter). ---
     const allNodes = collectNodesDFS(state.root).filter((n) => n.parent !== null);
-    await analyzeAllNodes(allNodes, depth, loadingText);
+    await analyzeAllNodes(allNodes, depth, loadingText, stored);
 
     // --- 4. Cursor at tip of main line. Render everything. ---
     state.currentNode = mainLineTip;
@@ -160,10 +162,11 @@ export async function loadPgn(directPgn = null) {
     renderGameReview();
     scrollHistoryToCurrentMove();
 
-    // enable training button
-    const trainingBtn = document.getElementById("trainingBtn");
-    trainingBtn.disabled = false;
-    trainingBtn.onclick = renderTrainingModal;
+    // Offer this game to the Training tab, which runs on its own page.
+    publishReviewGame(
+      txt,
+      [state.whitePlayer || "White", "vs", state.blackPlayer || "Black"].join(" "),
+    );
 
     const prev_fen = mainLineTip.parent ? mainLineTip.parent.fenAfter : null;
     const last_move_uci = mainLineTip.uci || null;
@@ -309,10 +312,15 @@ function collectNodesDFS(node) {
  * @param {number} depth - Engine depth.
  * @param {HTMLElement} loadingText - DOM element for progress feedback.
  */
-async function analyzeAllNodes(nodes, depth, loadingText) {
+async function analyzeAllNodes(nodes, depth, loadingText, stored = null) {
   const total = nodes.length;
   const cache = new Map(); // fenAfter -> analysis payload
   const mainLineSet = new Set(mainLineNodes());
+
+  // Games opened from the Players dashboard at their ingestion depth arrive
+  // with the analysis already computed: seed the cache so the engine is only
+  // hit for positions the stored game doesn't cover (i.e. sidelines).
+  if (stored) seedCacheFromStored(cache, stored);
 
   for (let i = 0; i < total; i++) {
     const node = nodes[i];
@@ -343,6 +351,41 @@ async function analyzeAllNodes(nodes, depth, loadingText) {
     ) {
       state.currentOpeningName = analysis.opening;
     }
+  }
+}
+
+/**
+ * Fills `cache` with `/api/analyze`-shaped payloads rebuilt from a stored
+ * Player DB analysis, keyed by `fen_after` like the live cache. The symbol and
+ * colour that go with a label aren't persisted — they're recovered from the
+ * shared label table in game-review.js.
+ *
+ * `eval_mate` is NULL for games ingested before it was persisted — those show a
+ * numeric eval on mating positions until they are re-ingested.
+ *
+ * The stored rows carry no `top_moves` / `alternative_moves`: those are only
+ * needed for the position currently under the cursor, which the Review page
+ * re-queries live via analyzeCurrentPosition().
+ *
+ * @param {Map<string, Object>} cache
+ * @param {{moves: Array<Object>}} stored
+ */
+function seedCacheFromStored(cache, stored) {
+  for (const m of stored.moves || []) {
+    if (!m.fen_after) continue;
+    const style = labelStyle(m.label);
+    const cpLoss = Math.max(0, m.cp_loss || 0);
+    cache.set(m.fen_after, {
+      eval: m.eval,
+      eval_mate: m.eval_mate ?? null,
+      top_moves: [],
+      alternative_moves: [],
+      classification: m.label
+        ? { label: m.label, symbol: style.symbol, color: style.color, diff_cp: cpLoss }
+        : null,
+      best_eval_loss: cpLoss,
+      opening: null,
+    });
   }
 }
 

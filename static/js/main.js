@@ -24,8 +24,6 @@ import { bindPgnLoader } from "./pgn.js";
 import { bindCollapsible } from "./collapsible.js";
 import { renderHistory } from "./history.js";
 import { bindRightClickArrows, clearUserArrows, redrawCurrentOverlays } from "./board-arrows.js";
-import { openTrainAsPlayerModal } from "./training-player.js";
-import { openEngineTrainingModal } from "./engine-training.js";
 import { bindGameReviewToggle } from "./game-review.js";
 
 
@@ -76,14 +74,6 @@ window.addEventListener("load", () => {
   bindCollapsible();
   bindGameReviewToggle();
 
-  document.getElementById("trainingOnPlayerBtn")?.addEventListener("click", () => {
-    openTrainAsPlayerModal();
-  });
-
-  document.getElementById("engineTrainingBtn")?.addEventListener("click", () => {
-    openEngineTrainingModal();
-  });
-
   // Initial render: empty tree, starting position analysis.
   renderHistory();
   analyzeCurrentPosition();
@@ -94,8 +84,13 @@ window.addEventListener("load", () => {
 });
 
 /**
- * If the URL carries `?pgn_game=<id>`, fetch that game's PGN from the Player DB
- * and run the standard analysis pipeline on it.
+ * If the URL carries `?pgn_game=<id>`, fetch that game from the Player DB and
+ * put it on the board.
+ *
+ * `?depth=<n>` selects the engine depth. When it is absent or equal to the
+ * depth the game was ingested at, the analysis stored in the Player DB is
+ * replayed as-is — no engine work, the game appears instantly. Any other depth
+ * re-analyzes the game from scratch at that depth.
  */
 async function maybeLoadGameFromQuery() {
   const params = new URLSearchParams(window.location.search);
@@ -106,9 +101,22 @@ async function maybeLoadGameFromQuery() {
     const res = await fetch(`/api/players/game/${encodeURIComponent(gameId)}/pgn`);
     if (!res.ok) return;
     const data = await res.json();
-    if (data.pgn && window.loadAndAnalyze) {
-      await window.loadAndAnalyze(data.pgn);
-    }
+    if (!data.pgn || !window.loadAndAnalyze) return;
+
+    const asked = parseInt(params.get("depth"), 10);
+    const storedDepth = data.analysis_depth;
+    const reuse = !Number.isFinite(asked) || asked === storedDepth;
+
+    // Keep the depth selector honest about what is on the board — it also
+    // drives the depth used for any sideline the user adds afterwards.
+    const depthInput = document.getElementById("depth");
+    const shown = reuse ? storedDepth : asked;
+    if (depthInput && shown) depthInput.value = shown;
+
+    await window.loadAndAnalyze(
+      data.pgn,
+      reuse && data.moves && data.moves.length ? data : null,
+    );
   } catch (e) {
     console.error("Failed to load game from Players DB", e);
   }

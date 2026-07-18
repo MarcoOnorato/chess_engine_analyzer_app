@@ -57,11 +57,20 @@ export async function fetchEngineMoves(fen, depth = 14, strength = {}) {
  * @param {"white"|"black"} opts.orientation
  * @param {(uci:string, san:string) => void} opts.onUserMove
  *        Called when the user successfully drops a *legal* move.
+ * @param {() => boolean} [opts.canMove]
+ *        Whether a move may be made *right now*. Flows that judge the user's
+ *        move against engine data use this to hold the board while that data
+ *        is still being computed: without it, a move played in the gap is
+ *        checked against the previous position's top moves — so a correct move
+ *        gets rejected and the stale hints come up.
  * @param {number} [opts.moveSpeed=200]     chessboard.js piece-glide duration
  *        (ms) for animated position changes, e.g. the opponent's reply.
  * @returns {{ board: any, chess: any, destroy: () => void }}
  */
-export function mountTrainingBoard({ fen, orientation, onUserMove, isLive = () => true, moveSpeed = 200 }) {
+export function mountTrainingBoard({
+  fen, orientation, onUserMove,
+  isLive = () => true, canMove = () => true, moveSpeed = 200,
+}) {
   const chess = new Chess(fen);
   let selectedSquare = null;
 
@@ -84,8 +93,11 @@ export function mountTrainingBoard({ fen, orientation, onUserMove, isLive = () =
     if (sqEl) sqEl.classList.add("highlight-selected");
   };
 
+  const WAIT_MESSAGE = "Wait — the engine is still analyzing this position";
+
   const canMovePiece = (piece) => {
     if (!isLive()) return false;
+    if (!canMove()) return false;
     if (chess.game_over()) return false;
     if (!piece) return false;
     const turn = chess.turn();
@@ -100,6 +112,14 @@ export function mountTrainingBoard({ fen, orientation, onUserMove, isLive = () =
 
     if (!isLive()) {
       showHistoryToast();
+      board.position(fenToPos(chess.fen()));
+      return false;
+    }
+
+    // Checked before chess.move(): once the move is applied there is no
+    // rejecting it without desyncing the board from the game.
+    if (!canMove()) {
+      showHistoryToast(WAIT_MESSAGE);
       board.position(fenToPos(chess.fen()));
       return false;
     }
@@ -147,6 +167,12 @@ export function mountTrainingBoard({ fen, orientation, onUserMove, isLive = () =
         showHistoryToast();
         return false;
       }
+      // Same for the window between the opponent's reply and the engine
+      // having judged the new position.
+      if (!canMove()) {
+        showHistoryToast(WAIT_MESSAGE);
+        return false;
+      }
       if (!canMovePiece(piece)) return false;
     },
 
@@ -161,6 +187,10 @@ export function mountTrainingBoard({ fen, orientation, onUserMove, isLive = () =
       // Double-check: if somehow a drop fires while in history mode, snapback.
       if (!isLive()) {
         showHistoryToast();
+        return "snapback";
+      }
+      if (!canMove()) {
+        showHistoryToast(WAIT_MESSAGE);
         return "snapback";
       }
 
@@ -419,7 +449,7 @@ let _historyToastTimer = null;
  * The toast auto-dismisses after 2 s. Multiple rapid calls debounce
  * gracefully (timer resets without creating duplicate elements).
  */
-export function showHistoryToast() {
+export function showHistoryToast(message = "Go back to the last position to play") {
   const boardEl = document.getElementById("trainingBoard");
   if (!boardEl) return;
 
@@ -427,8 +457,8 @@ export function showHistoryToast() {
   if (!_historyToastEl) {
     _historyToastEl = document.createElement("div");
     _historyToastEl.className = "tplay-history-toast";
-    _historyToastEl.textContent = "Go back to the last position to play";
   }
+  _historyToastEl.textContent = message;
 
   // Attach to the board container if not already there.
   if (!_historyToastEl.parentElement) {

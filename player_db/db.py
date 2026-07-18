@@ -120,6 +120,13 @@ CREATE TABLE IF NOT EXISTS moves (
     fen_after   TEXT,
     cp_loss     REAL,
     eval        REAL,
+    eval_mate   INTEGER,
+    -- Engine's preferred move in the position *after* this move. Training reads
+    -- it from the previous ply to tell a missed capture from a missed tactic.
+    best_uci    TEXT,
+    best_san    TEXT,
+    best_score  REAL,
+    best_mate   INTEGER,
     label       TEXT,
     phase       TEXT
 );
@@ -146,6 +153,22 @@ def init_db() -> None:
     """Creates the schema (idempotent) and marks stale running jobs interrupted."""
     conn = get_conn()
     conn.executescript(_SCHEMA)
+
+    # Columns added after the first release. Existing rows keep NULL: those
+    # games show a numeric eval for mates, and Train-as-a-player can only sort
+    # their errors into the two categories that need no engine best move, until
+    # they are re-ingested.
+    columns = {r["name"] for r in conn.execute("PRAGMA table_info(moves)")}
+    for name, decl in (
+        ("eval_mate", "INTEGER"),
+        ("best_uci", "TEXT"),
+        ("best_san", "TEXT"),
+        ("best_score", "REAL"),
+        ("best_mate", "INTEGER"),
+    ):
+        if name not in columns:
+            conn.execute(f"ALTER TABLE moves ADD COLUMN {name} {decl}")
+
     # A worker that was killed mid-run leaves 'running'/'queued' jobs behind.
     conn.execute(
         "UPDATE ingest_jobs SET status='interrupted', updated_at=? "
@@ -263,15 +286,29 @@ def upsert_game(profile_id: int, meta: Dict[str, Any], aggregates: Dict[str, Any
     return game_id
 
 
+def moves_for_game(game_id: int) -> List[Dict[str, Any]]:
+    """Stored per-ply analysis of one game, in play order."""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT ply, side, san, uci, fen_before, fen_after, cp_loss, eval, eval_mate, "
+        "best_uci, best_san, best_score, best_mate, label, phase "
+        "FROM moves WHERE game_id = ? ORDER BY ply",
+        (game_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def replace_moves(game_id: int, moves: List[Dict[str, Any]]) -> None:
     conn = get_conn()
     conn.execute("DELETE FROM moves WHERE game_id = ?", (game_id,))
     conn.executemany(
         """
         INSERT INTO moves (game_id, ply, side, san, uci, fen_before, fen_after,
-                           cp_loss, eval, label, phase)
+                           cp_loss, eval, eval_mate, best_uci, best_san,
+                           best_score, best_mate, label, phase)
         VALUES (:game_id, :ply, :side, :san, :uci, :fen_before, :fen_after,
-                :cp_loss, :eval, :label, :phase)
+                :cp_loss, :eval, :eval_mate, :best_uci, :best_san,
+                :best_score, :best_mate, :label, :phase)
         """,
         [{"game_id": game_id, **m} for m in moves],
     )

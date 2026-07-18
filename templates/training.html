@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Training — Chess Analysis</title>
+
+<link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='nav.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='game-loading-modals.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='training-modal.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='training-player.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='training-hub.css') }}">
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+
+</head>
+<body>
+
+{% set nav_active = 'training' %}
+{% include '_nav.html' %}
+
+<main class="thub-main">
+  <div class="thub-head">
+    <h1>Training</h1>
+    <p class="thub-sub">Three ways to practise. Each one starts by choosing what to train on.</p>
+  </div>
+
+  <div class="thub-cards">
+    <button class="thub-card" id="thubGameBtn">
+      <span class="thub-card-icon">🎯</span>
+      <span class="thub-card-title">Train on a game</span>
+      <span class="thub-card-desc">Replay your mistakes, punish your opponent's, or hold a worse
+        position — from any game you pick.</span>
+    </button>
+
+    <button class="thub-card" id="thubPlayerBtn">
+      <span class="thub-card-icon">👤</span>
+      <span class="thub-card-title">Train as a player</span>
+      <span class="thub-card-desc">Pick a tracked profile and drill the weakness that shows up
+        most across its stored games.</span>
+    </button>
+
+    <button class="thub-card" id="thubEngineBtn">
+      <span class="thub-card-icon">🤖</span>
+      <span class="thub-card-title">Train vs engine</span>
+      <span class="thub-card-desc">Play on against Stockfish from any position, at the strength
+        you choose.</span>
+    </button>
+  </div>
+
+  <p class="thub-note" id="thubPlayerNote"></p>
+</main>
+
+<!-- TRAINING MODAL (full-page overlay; click-outside does NOT close it) -->
+<div id="trainingModal" class="training-modal hidden" role="dialog" aria-modal="true">
+  <header class="training-modal-header">
+    <button id="trainingExitBtn" class="training-return-btn" type="button">
+      ← Back to training
+    </button>
+    <h2 id="trainingPhaseLabel" class="training-modal-title">Training</h2>
+    <div class="training-header-spacer"></div>
+  </header>
+  <main id="trainingModalBody" class="training-modal-body"></main>
+</div>
+
+<!-- PROMOTION MODAL (used by the training boards) -->
+<div id="promoModal" class="promo-modal hidden">
+  <div class="promo-dialog">
+    <div class="promo-title">Promote Pawn</div>
+    <div class="promo-pieces" id="promoPieces"></div>
+    <button class="promo-cancel" id="promoCancel">Cancel</button>
+  </div>
+</div>
+
+<script type="module" src="{{ url_for('static', filename='js/training-hub.js') }}"></script>
+</body>
+</html>

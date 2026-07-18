@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="static/training-modal.css">
 <link rel="stylesheet" href="static/training-player.css">
 <link rel="stylesheet" href="static/game-review.css">
+<link rel="stylesheet" href="static/training-hub.css">
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
@@ -133,11 +134,10 @@
       <div class="game-tree-header">
         <h3>
           📜 Game
-          <button id="trainingBtn" title="Train on this game" disabled>Train on this game</button>
-          <button id="trainingOnPlayerBtn" title="Train on this game">Train as a player</button>
-          <button id="engineTrainingBtn" title="Play from a chosen position against the engine">Train vs engine</button>
+          <a id="goToTrainingLink" class="game-tree-training-link" href="/training"
+             title="Training lives in its own tab — the game loaded here is offered as a source">Training ↗</a>
         </h3>
-        
+
         <div class="tree-actions">
           <button id="promoteBtn" title="Promote variation to main line" disabled>⤴ Promote var</button>
           <button id="deleteVarBtn" title="Delete current variation" disabled>🗑 Delete var</button>

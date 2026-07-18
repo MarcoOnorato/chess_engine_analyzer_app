@@ -28,6 +28,19 @@ export async function api(path, body) {
 }
 
 /**
+ * Performs a JSON GET request against the local backend.
+ *
+ * @param {string} path - API endpoint, e.g. "/api/players".
+ * @returns {Promise<Object>} Parsed JSON response.
+ * @throws {Error} If the response status is not 2xx.
+ */
+api.get = async function apiGet(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error(`${path} -> ${r.status}`);
+  return r.json();
+};
+
+/**
  * Strips the side-to-move / castling / en-passant / clock fields from a FEN,
  * returning only the position layout (the part chessboard.js renders).
  *

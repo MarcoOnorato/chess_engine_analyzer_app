@@ -1,0 +1,81 @@
+/* Training hub: the three entry cards on /training. */
+
+.thub-main {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 32px 20px 60px;
+}
+
+.thub-head h1 {
+  color: #ebf8ff;
+  margin: 0 0 6px;
+}
+
+.thub-sub {
+  color: #9fb3c8;
+  margin: 0 0 28px;
+}
+
+.thub-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 18px;
+}
+
+.thub-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  text-align: left;
+  padding: 22px;
+  border-radius: 12px;
+  cursor: pointer;
+  color: #e6edf3;
+  background: linear-gradient(180deg, rgba(56, 189, 248, 0.10), rgba(56, 189, 248, 0.03));
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  transition: transform 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.thub-card:hover {
+  transform: translateY(-2px);
+  border-color: #26bbff;
+  background: linear-gradient(180deg, rgba(56, 189, 248, 0.18), rgba(56, 189, 248, 0.06));
+}
+
+.thub-card-icon { font-size: 1.8em; }
+
+.thub-card-title {
+  font-size: 1.1em;
+  font-weight: 700;
+  color: #ebf8ff;
+}
+
+.thub-card-desc {
+  font-size: 0.88em;
+  line-height: 1.45;
+  color: #9fb3c8;
+}
+
+.thub-note {
+  margin-top: 22px;
+  font-size: 0.85em;
+  color: #6b8299;
+}
+
+/* Link that replaced the training buttons in the Review page's Game panel. */
+.game-tree-training-link {
+  font-size: 0.75em;
+  font-weight: 600;
+  text-decoration: none;
+  color: #26bbff;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 999px;
+  padding: 3px 10px;
+  margin-left: 10px;
+  vertical-align: middle;
+}
+
+.game-tree-training-link:hover {
+  background: rgba(56, 189, 248, 0.14);
+}

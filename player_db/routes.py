@@ -12,7 +12,9 @@ from . import db, ingest, sources, stats
 bp = Blueprint("player_db", __name__)
 
 _VALID_PLATFORMS = ("lichess", "chesscom")
-_MIN_DEPTH, _MAX_DEPTH = 6, 30
+# Same range as the Review page's depth input (templates/index.html), so every
+# ingested game can be reopened at its own depth there.
+_MIN_DEPTH, _MAX_DEPTH = 8, 30
 _MAX_COUNT = 200
 _ACTIVE_JOB_STATES = ("queued", "running", "cancelling")
 
@@ -147,7 +149,17 @@ def player_games(profile_id: int) -> Response:
 
 @bp.route("/api/players/game/<int:game_id>/pgn", methods=["GET"])
 def game_pgn(game_id: int) -> Response:
+    """The game's PGN plus the analysis stored at ingest time, so the Review
+    page can replay it at the ingestion depth without re-running the engine."""
     game = db.get_game(game_id)
     if game is None:
         return jsonify({"error": "Game not found"}), 404
-    return jsonify({"pgn": game["pgn"], "white": game.get("white"), "black": game.get("black")})
+    return jsonify({
+        "pgn": game["pgn"],
+        "white": game.get("white"),
+        "black": game.get("black"),
+        "opening": game.get("opening"),
+        "player_color": game.get("player_color"),
+        "analysis_depth": game.get("analysis_depth"),
+        "moves": db.moves_for_game(game_id),
+    })

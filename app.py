@@ -63,6 +63,12 @@ def index() -> str:
     return render_template("index.html")
 
 
+@app.route("/training")
+def training() -> str:
+    """Renders the Training hub: the three practice flows live here."""
+    return render_template("training.html")
+
+
 @app.route("/api/list_openings")
 def list_openings() -> Response:
     """Returns the raw openings JSON dataset."""

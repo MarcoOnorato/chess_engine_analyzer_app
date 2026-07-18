@@ -6,10 +6,12 @@
  * Communicates with the router in main.js via DOM CustomEvents:
  *   - "pdb:open"    detail {id}  → open that profile's dashboard
  *   - "pdb:refresh"               → a job finished; refresh open dashboard
+ *   - "pdb:job"                   → ingest progress tick (banner + live refresh)
  */
 
 import { api } from "./api.js";
 import { toast, askConflict } from "./ui.js";
+import { submitOnEnter } from "../form-enter.js";
 
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({
@@ -53,7 +55,7 @@ function cardHtml(p) {
       </div>
       <div class="pdb-import-form">
         <label>Games<input class="imp-count" type="number" value="10" min="1"></label>
-        <label>Depth<input class="imp-depth" type="number" value="10" min="6" max="30"></label>
+        <label>Depth<input class="imp-depth" type="number" value="10" min="8" max="30"></label>
         <button class="pdb-btn pdb-btn-ghost pdb-btn-sm" data-act="import">Import games</button>
       </div>
       <div class="pdb-progress-area hidden">
@@ -84,7 +86,9 @@ function wireCard(profile) {
     }
   };
 
-  card.querySelector('[data-act="import"]').onclick = () => runImport(profile, card);
+  const importBtn = card.querySelector('[data-act="import"]');
+  importBtn.onclick = () => runImport(profile, card);
+  submitOnEnter([card.querySelector(".imp-count"), card.querySelector(".imp-depth")], importBtn);
 }
 
 async function runImport(profile, card) {
@@ -120,6 +124,11 @@ async function runImport(profile, card) {
   }
 }
 
+/** Broadcasts ingest progress to the router (see main.js). */
+function emitJob(detail) {
+  document.dispatchEvent(new CustomEvent("pdb:job", { detail }));
+}
+
 function pollJob(profile, card, jobId, importBtn) {
   const area = card.querySelector(".pdb-progress-area");
   const fill = card.querySelector(".pdb-progress-fill");
@@ -146,7 +155,10 @@ function pollJob(profile, card, jobId, importBtn) {
     importBtn.disabled = false;
     cancelBtn.classList.add("hidden");
     cancelBtn.onclick = null;
+    emitJob({ profileId: profile.id, active: false });
   };
+
+  let lastDone = -1;
 
   const timer = setInterval(async () => {
     let job;
@@ -154,6 +166,7 @@ function pollJob(profile, card, jobId, importBtn) {
       job = await api.jobStatus(jobId);
     } catch (e) {
       finish();
+      emitJob({ profileId: profile.id, active: false });
       toast(e.message, true);
       return;
     }
@@ -162,6 +175,19 @@ function pollJob(profile, card, jobId, importBtn) {
     const done = job.done || 0;
     const pct = total ? Math.round((done / total) * 100) : (job.status === "running" ? 5 : 0);
     fill.style.width = `${pct}%`;
+
+    // Mirror the progress outside the profiles view (the dashboard hides it),
+    // and let an open dashboard repaint whenever another game has landed.
+    emitJob({
+      profileId: profile.id,
+      jobId,
+      active: true,
+      status: job.status,
+      done,
+      total,
+      progressed: done !== lastDone,
+    });
+    lastDone = done;
 
     if (job.status === "cancelling") {
       label.textContent = total ? `Cancelling… (${done}/${total})` : "Cancelling…";
@@ -197,6 +223,8 @@ function pollJob(profile, card, jobId, importBtn) {
 export function bindNewProfileForm() {
   const btn = document.getElementById("npCreateBtn");
   const errEl = document.getElementById("npError");
+
+  submitOnEnter(["npLabel", "npPlatform", "npUsername"], btn);
 
   btn.onclick = async () => {
     errEl.textContent = "";

@@ -169,6 +169,111 @@ export async function analysePlayerGames(pgns, playerName, depth = 12, onProgres
   return { byCategory, counts, frequencies, totalAnalysed };
 }
 
+/* ─── Player DB entry ────────────────────────────────────────────────────── */
+
+/**
+ * Same classification, but over a tracked profile's stored games: the analysis
+ * was done once at ingest time, so this runs without touching the engine.
+ *
+ * Games ingested before the best-move columns existed have no `best_uci`, so
+ * the two categories that need the engine's preferred move (hanging piece,
+ * missed capture) can't be detected for them; their errors fall through to
+ * MISSED_TACTIC. Re-ingesting those games fixes it.
+ *
+ * @param {number} profileId
+ * @param {(done:number,total:number,label:string)=>void} [onProgress]
+ * @returns {Promise<PlayerAnalysisResult & {staleGames:number, totalGames:number}>}
+ */
+export async function analyseProfileGames(profileId, onProgress) {
+  const games = await api.get(`/api/players/${profileId}/games`);
+
+  const byCategory = {
+    [PLAYER_ERROR_TYPES.HANGING_PIECE]:  [],
+    [PLAYER_ERROR_TYPES.MISSED_CAPTURE]: [],
+    [PLAYER_ERROR_TYPES.MISSED_MATE]:    [],
+    [PLAYER_ERROR_TYPES.MISSED_TACTIC]:  [],
+  };
+
+  let totalAnalysed = 0;
+  let staleGames = 0;
+
+  for (let gi = 0; gi < games.length; gi++) {
+    const game = games[gi];
+    onProgress?.(gi, games.length, `Reading game ${gi + 1} / ${games.length}…`);
+
+    let data;
+    try {
+      data = await api.get(`/api/players/game/${game.id}/pgn`);
+    } catch (e) {
+      console.warn("[player-analysis] could not read stored game:", e);
+      continue;
+    }
+
+    const userColor = game.player_color || data.player_color;
+    const mainLine = storedMainLine(data.moves || []);
+    if (!userColor || !mainLine.length) continue;
+    if (!mainLine.some((n) => n.topMoves.length)) staleGames++;
+
+    const rootFen = mainLine[0].fenBefore;
+    const userParity = userColor === "white" ? 1 : 0;
+
+    for (const node of mainLine) {
+      totalAnalysed++;
+      if (node.ply % 2 !== userParity) continue;
+      if (node.cpLoss < CP_ERROR_MIN) continue;
+
+      const category = classifyError(node, userColor, mainLine);
+      if (!category) continue;
+
+      const spec = buildSpec(node, category, userColor, rootFen, mainLine, data.pgn);
+      if (byCategory[category].length < MAX_PER_CATEGORY) {
+        byCategory[category].push(spec);
+      }
+    }
+  }
+
+  onProgress?.(games.length, games.length, "Ready.");
+
+  const counts = Object.fromEntries(
+    Object.entries(byCategory).map(([k, v]) => [k, v.length])
+  );
+  const totalErrors = Object.values(counts).reduce((a, b) => a + b, 0);
+  const frequencies = Object.fromEntries(
+    Object.entries(counts).map(([k, v]) => [
+      k,
+      totalErrors > 0 ? Math.round((v / totalErrors) * 100) : 0,
+    ])
+  );
+
+  return { byCategory, counts, frequencies, totalAnalysed, staleGames, totalGames: games.length };
+}
+
+/** Turns stored move rows into the linked NodeLite list the classifier wants. */
+function storedMainLine(moves) {
+  const nodes = [];
+  let parent = null;
+  for (const m of moves) {
+    const node = {
+      parent,
+      ply: m.ply,
+      san: m.san,
+      uci: m.uci,
+      fenBefore: m.fen_before,
+      fenAfter: m.fen_after,
+      eval: m.eval,
+      eval_mate: m.eval_mate,
+      cpLoss: Math.max(0, m.cp_loss || 0),
+      evalData: m.label ? { label: m.label } : null,
+      topMoves: m.best_uci
+        ? [{ uci: m.best_uci, san: m.best_san, score: m.best_score, mate: m.best_mate }]
+        : [],
+    };
+    nodes.push(node);
+    parent = node;
+  }
+  return nodes;
+}
+
 /* ─── Classification logic ───────────────────────────────────────────────── */
 
 /**

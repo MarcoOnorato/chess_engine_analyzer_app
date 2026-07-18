@@ -57,6 +57,12 @@
       <div id="dashTitle" class="pdb-dash-title"></div>
     </div>
 
+    <div id="dashJobBanner" class="pdb-job-banner hidden">
+      <span class="pdb-job-spinner"></span>
+      <span id="dashJobLabel"></span>
+      <button id="dashJobCancel" class="pdb-btn pdb-btn-danger pdb-btn-sm">Cancel</button>
+    </div>
+
     <div id="tcFilter" class="pdb-tc-filter"></div>
 
     <div id="kpis" class="pdb-kpis"></div>
@@ -91,6 +97,12 @@
 
     <div class="pdb-card">
       <h3>Recent games</h3>
+      <div class="pdb-review-depth">
+        <label>Review depth
+          <input id="reviewDepth" type="number" min="8" max="30">
+        </label>
+        <span class="pdb-hint">Empty: reuse each game's saved analysis (no recompute).</span>
+      </div>
       <div id="gamesTable" class="pdb-games"></div>
     </div>
   </section>

@@ -131,6 +131,21 @@ function renderOpenings(openings) {
     </table>`;
 }
 
+/**
+ * Depth requested for "Open in Review", or null to reuse each game's stored
+ * analysis. A depth equal to the game's own ingestion depth also reuses it —
+ * that decision lives in the Review page (see main.js).
+ */
+function reviewDepth() {
+  const v = parseInt(document.getElementById("reviewDepth")?.value, 10);
+  return Number.isFinite(v) ? v : null;
+}
+
+function reviewHref(game) {
+  const d = reviewDepth();
+  return `/?pgn_game=${game.id}${d ? `&depth=${d}` : ""}`;
+}
+
 function gamesRowsHtml(games) {
   return games.map((g) => {
     const date = g.played_at ? g.played_at.slice(0, 10) : "--";
@@ -146,7 +161,9 @@ function gamesRowsHtml(games) {
         <td class="num">${fmt(g.accuracy, "%")}</td>
         <td class="num">${g.est_elo == null ? "--" : "~" + g.est_elo}</td>
         <td class="num">d${g.analysis_depth ?? "?"}</td>
-        <td><a class="pdb-btn pdb-btn-ghost pdb-btn-sm" href="/?pgn_game=${g.id}">Open in Review</a></td>
+        <td><a class="pdb-btn pdb-btn-ghost pdb-btn-sm" href="${reviewHref(g)}">${
+          reviewDepth() && reviewDepth() !== g.analysis_depth ? "Re-analyze in Review" : "Open in Review"
+        }</a></td>
       </tr>`;
   }).join("");
 }
@@ -270,7 +287,34 @@ export async function renderDashboard(profileId) {
   const meta = [p.platform, p.username].filter(Boolean).join(" · ");
   titleEl.innerHTML = `${esc(p.label || "Player")}<small>${esc(meta)}</small>`;
 
+  // Changing the review depth only rewrites the row links/labels.
+  const depthEl = document.getElementById("reviewDepth");
+  if (depthEl) depthEl.oninput = () => renderGamesPage();
+
   renderFilter(stats.time_controls);
   renderTimeControls(stats.time_controls);
   paintScoped(stats);
+}
+
+/**
+ * Re-fetches and repaints the dashboard already on screen, keeping the active
+ * time-control filter and (as far as it still exists) the current games page.
+ * Used to follow an ingest job live, so the dashboard stays consultable and
+ * shows the games analyzed so far.
+ */
+export async function refreshDashboard() {
+  if (_profileId == null) return;
+  const page = _gamesPage;
+
+  const [stats, games] = await Promise.all([
+    api.stats(_profileId, _selectedTc),
+    api.games(_profileId),
+  ]);
+  _allGames = games;
+
+  renderFilter(stats.time_controls);
+  renderTimeControls(stats.time_controls);
+  paintScoped(stats); // resets to page 1
+  _gamesPage = page;
+  renderGamesPage(); // clamps the page if the list shrank
 }
