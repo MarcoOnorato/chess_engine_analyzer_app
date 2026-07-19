@@ -10,6 +10,7 @@
  */
 
 import { state } from "./state.js";
+import { api } from "./api.js";
 
 /**
  * Renders the cached openings filtered by `filterText` into the modal list.
@@ -70,8 +71,7 @@ export function bindOpenings() {
     modal.classList.remove("hidden");
 
     try {
-      const response = await fetch("/api/list_openings");
-      state.cachedOpenings = await response.json();
+      state.cachedOpenings = await api.get("/api/list_openings");
       renderOpeningsList("");
     } catch (e) {
       listEl.innerHTML = "Error loading openings.";

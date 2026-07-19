@@ -1,0 +1,58 @@
+[project]
+name = "chess-engine-analyzer"
+version = "1.0.0"
+description = "Chess analysis app: Stockfish-backed review, training and personal player database."
+requires-python = ">=3.12"
+dependencies = [
+    "Flask==3.1.3",
+    "python-chess==1.999",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0",
+    "ruff>=0.15",
+    "mypy>=2.0",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+extend-exclude = [".venv", "stockfish", "windows_stockfish", "static"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "W",    # pycodestyle warnings
+    "I",    # import sorting
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "SIM",  # simplify
+    "C4",   # comprehensions
+    "RET",  # return consistency
+    "PL",   # pylint subset
+]
+ignore = [
+    "PLR0911",  # many returns: classify_move is a deliberate threshold ladder
+    "PLR0912",  # many branches: analyze_move's mate handling is inherently branchy
+    "PLR0915",  # many statements: same
+    "PLR2004",  # magic values: chess thresholds read better inline
+]
+
+[tool.ruff.lint.pylint]
+# analyze_move / analyse_pair / start_ingest take fen + prev_fen + depth +
+# strength settings. Bundling them into a params object would obscure, not help.
+max-args = 8
+
+[tool.mypy]
+python_version = "3.12"
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unreachable = true
+ignore_missing_imports = true
+exclude = "(^\\.venv/|^stockfish/|^windows_stockfish/)"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

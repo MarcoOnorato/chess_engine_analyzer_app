@@ -3,9 +3,10 @@ Flask Blueprint for the optional Player DB feature: the /players page plus the
 JSON API backing the profile list, ingestion jobs and the stats dashboard.
 """
 
-from typing import Any, Dict, Tuple
+from typing import Any
 
-from flask import Blueprint, Response, jsonify, render_template, request
+from flask import Blueprint, jsonify, render_template, request
+from flask.typing import ResponseReturnValue
 
 from . import db, ingest, sources, stats
 
@@ -33,13 +34,13 @@ def players_page() -> str:
 # --- PROFILES --------------------------------------------------------------
 
 @bp.route("/api/players", methods=["GET"])
-def list_players() -> Response:
+def list_players() -> ResponseReturnValue:
     return jsonify(db.list_profiles())
 
 
 @bp.route("/api/players", methods=["POST"])
-def create_player() -> Response:
-    data: Dict[str, Any] = request.get_json(force=True) or {}
+def create_player() -> ResponseReturnValue:
+    data: dict[str, Any] = request.get_json(force=True) or {}
     label = (data.get("label") or "").strip()
     if not label:
         return jsonify({"error": "Label is required"}), 400
@@ -53,7 +54,7 @@ def create_player() -> Response:
 
 
 @bp.route("/api/players/<int:profile_id>", methods=["DELETE"])
-def delete_player(profile_id: int) -> Response:
+def delete_player(profile_id: int) -> ResponseReturnValue:
     if db.get_profile(profile_id) is None:
         return jsonify({"error": "Profile not found"}), 404
     db.delete_profile(profile_id)
@@ -62,7 +63,7 @@ def delete_player(profile_id: int) -> Response:
 
 # --- INGESTION -------------------------------------------------------------
 
-def _parse_ingest_params(data: Dict[str, Any]) -> Tuple[str, str, int, int]:
+def _parse_ingest_params(data: dict[str, Any]) -> tuple[str, str, int, int]:
     platform = (data.get("platform") or "").strip().lower()
     username = (data.get("username") or "").strip()
     count = _clamp(int(data.get("count") or 10), 1, _MAX_COUNT)
@@ -71,7 +72,7 @@ def _parse_ingest_params(data: Dict[str, Any]) -> Tuple[str, str, int, int]:
 
 
 @bp.route("/api/players/<int:profile_id>/ingest/preview", methods=["POST"])
-def preview_ingest(profile_id: int) -> Response:
+def preview_ingest(profile_id: int) -> ResponseReturnValue:
     if db.get_profile(profile_id) is None:
         return jsonify({"error": "Profile not found"}), 404
     data = request.get_json(force=True) or {}
@@ -86,7 +87,7 @@ def preview_ingest(profile_id: int) -> Response:
 
 
 @bp.route("/api/players/<int:profile_id>/ingest", methods=["POST"])
-def start_ingest(profile_id: int) -> Response:
+def start_ingest(profile_id: int) -> ResponseReturnValue:
     if db.get_profile(profile_id) is None:
         return jsonify({"error": "Profile not found"}), 404
     data = request.get_json(force=True) or {}
@@ -99,7 +100,7 @@ def start_ingest(profile_id: int) -> Response:
 
 
 @bp.route("/api/players/jobs/<int:job_id>", methods=["GET"])
-def job_status(job_id: int) -> Response:
+def job_status(job_id: int) -> ResponseReturnValue:
     job = db.get_job(job_id)
     if job is None:
         return jsonify({"error": "Job not found"}), 404
@@ -114,7 +115,7 @@ def job_status(job_id: int) -> Response:
 
 
 @bp.route("/api/players/jobs/<int:job_id>/cancel", methods=["POST"])
-def cancel_job(job_id: int) -> Response:
+def cancel_job(job_id: int) -> ResponseReturnValue:
     """Requests cancellation of a running/queued ingest job. Games analyzed so
     far are kept; the worker stops before the next game."""
     job = db.get_job(job_id)
@@ -130,7 +131,7 @@ def cancel_job(job_id: int) -> Response:
 # --- DASHBOARD -------------------------------------------------------------
 
 @bp.route("/api/players/<int:profile_id>/stats", methods=["GET"])
-def player_stats(profile_id: int) -> Response:
+def player_stats(profile_id: int) -> ResponseReturnValue:
     profile = db.get_profile(profile_id)
     if profile is None:
         return jsonify({"error": "Profile not found"}), 404
@@ -140,15 +141,24 @@ def player_stats(profile_id: int) -> Response:
     return jsonify(dashboard)
 
 
+@bp.route("/api/players/<int:profile_id>/brilliants", methods=["GET"])
+def player_brilliants(profile_id: int) -> ResponseReturnValue:
+    """The tracked player's Brilliant moves, for the brilliancy explorer."""
+    if db.get_profile(profile_id) is None:
+        return jsonify({"error": "Profile not found"}), 404
+    time_class = request.args.get("time_class") or None
+    return jsonify(db.brilliant_moves(profile_id, time_class))
+
+
 @bp.route("/api/players/<int:profile_id>/games", methods=["GET"])
-def player_games(profile_id: int) -> Response:
+def player_games(profile_id: int) -> ResponseReturnValue:
     if db.get_profile(profile_id) is None:
         return jsonify({"error": "Profile not found"}), 404
     return jsonify(db.games_for_profile(profile_id))
 
 
 @bp.route("/api/players/game/<int:game_id>/pgn", methods=["GET"])
-def game_pgn(game_id: int) -> Response:
+def game_pgn(game_id: int) -> ResponseReturnValue:
     """The game's PGN plus the analysis stored at ingest time, so the Review
     page can replay it at the ingestion depth without re-running the engine."""
     game = db.get_game(game_id)

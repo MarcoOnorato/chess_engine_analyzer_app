@@ -13,9 +13,10 @@ Blueprint in the `player_db` package, registered only when PLAYER_DB_ENABLED.
 import atexit
 import io
 import json
+import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import chess
 import chess.pgn
@@ -23,6 +24,12 @@ from flask import Flask, Response, jsonify, render_template, request
 from flask.typing import ResponseReturnValue
 
 import analysis_core
+
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
@@ -37,7 +44,7 @@ PLAYER_DB_ENABLED: bool = _player_db_enabled()
 
 
 @app.context_processor
-def _inject_flags() -> Dict[str, Any]:
+def _inject_flags() -> dict[str, Any]:
     """Expose feature flags to every template (e.g. the shared navbar)."""
     return {"player_db_enabled": PLAYER_DB_ENABLED}
 
@@ -86,7 +93,7 @@ def analyze() -> Response:
     Thin wrapper over `analysis_core.analyze_move` — the actual engine work and
     (tricky) move classification are shared with the Player DB batch ingester.
     """
-    data: Dict[str, Any] = request.get_json(force=True)
+    data: dict[str, Any] = request.get_json(force=True)
 
     engine_elo = int(data["engine_elo"]) if data.get("engine_elo") is not None else None
     skill_level = int(data["skill_level"]) if data.get("skill_level") is not None else None
@@ -108,7 +115,7 @@ def legal_moves() -> Response:
     Performs a quick legality check for a single move.
     Primarily used by chessboard.js during the 'onDrop' event.
     """
-    data: Dict[str, Any] = request.get_json(force=True)
+    data: dict[str, Any] = request.get_json(force=True)
     fen: str = data.get("fen", "")
     from_sq: str = data.get("from", "")
     to_sq: str = data.get("to", "")
@@ -151,7 +158,7 @@ def legal_moves() -> Response:
 def _serialize_pgn_node(
     pgn_node: chess.pgn.GameNode,
     parent_board: chess.Board,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Recursively serializes a python-chess `GameNode` into the JSON tree shape
     consumed by the frontend.
@@ -172,7 +179,7 @@ def _serialize_pgn_node(
     child_board.push(move)
     fen_after = child_board.fen()
 
-    children: List[Dict[str, Any]] = [
+    children: list[dict[str, Any]] = [
         _serialize_pgn_node(child, child_board)
         for child in pgn_node.variations
     ]
@@ -190,14 +197,14 @@ def _serialize_pgn_node(
 
 def _flatten_main_line(
     game: chess.pgn.Game,
-) -> Tuple[List[Dict[str, str]], List[str]]:
+) -> tuple[list[dict[str, str]], list[str]]:
     """
     Returns the main-line moves and FENs as the legacy flat lists used by
     older frontends.
     """
     board = game.board()
-    moves: List[Dict[str, str]] = []
-    fens: List[str] = [board.fen()]
+    moves: list[dict[str, str]] = []
+    fens: list[str] = [board.fen()]
 
     for mv in game.mainline_moves():
         moves.append({"uci": mv.uci(), "san": board.san(mv)})
@@ -213,7 +220,7 @@ def load_pgn() -> ResponseReturnValue:
     Loads and parses a PGN string into a game tree, including any sidelines
     (variations) the source PGN contains.
     """
-    data: Dict[str, Any] = request.get_json(force=True)
+    data: dict[str, Any] = request.get_json(force=True)
     pgn_text: str = data.get("pgn", "").strip()
 
     if not pgn_text:
@@ -227,11 +234,11 @@ def load_pgn() -> ResponseReturnValue:
 
         # Build the tree.
         root_board = game.board()
-        tree_children: List[Dict[str, Any]] = [
+        tree_children: list[dict[str, Any]] = [
             _serialize_pgn_node(child, root_board)
             for child in game.variations
         ]
-        tree: Dict[str, Any] = {
+        tree: dict[str, Any] = {
             "san":       None,
             "uci":       None,
             "fenBefore": root_board.fen(),
@@ -255,10 +262,16 @@ def load_pgn() -> ResponseReturnValue:
             "fens":      fens,
         })
 
-    except Exception as e:
-        return jsonify({
-            "error": f"PGN parsing failed: {str(e)}"
-        }), 400
+    except ValueError as e:
+        # Malformed PGN: illegal SAN, broken variation, bad header. The client's
+        # input is at fault, so echo the reason back.
+        return jsonify({"error": f"PGN parsing failed: {e}"}), 400
+
+    except Exception:
+        # Anything else is our bug, not the user's — log it and stop reporting
+        # server faults as "invalid PGN".
+        logger.exception("Unexpected failure while parsing a PGN")
+        return jsonify({"error": "Internal error while parsing the PGN"}), 500
 
 
 # --- OPTIONAL PLAYER DB BLUEPRINT ------------------------------------------
@@ -267,12 +280,12 @@ if PLAYER_DB_ENABLED:
     try:
         from player_db import register_player_db
         register_player_db(app)
-        print("Player DB feature: ENABLED")
-    except Exception as e:  # pragma: no cover - defensive: never break base app
-        print(f"Player DB feature failed to initialise, continuing without it: {e}")
+        logger.info("Player DB feature: ENABLED")
+    except Exception:  # pragma: no cover - defensive: never break base app
+        logger.exception("Player DB failed to initialise, continuing without it")
         PLAYER_DB_ENABLED = False
 else:
-    print("Player DB feature: DISABLED (set PLAYER_DB_ENABLED=1 to enable)")
+    logger.info("Player DB feature: DISABLED (set PLAYER_DB_ENABLED=1 to enable)")
 
 
 if __name__ == "__main__":

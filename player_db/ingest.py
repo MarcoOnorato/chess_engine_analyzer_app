@@ -14,39 +14,55 @@ user first — see routes.preview_ingest).
 
 import hashlib
 import io
+import json
+import logging
 import queue
 import threading
-from typing import Any, Dict, List, Optional
+from collections.abc import Callable
+from typing import Any
 
 import chess
 import chess.pgn
 
 import analysis_core
+
 from . import db, sources, stats
 
-_job_queue: "queue.Queue[int]" = queue.Queue()
-_worker_started = False
-_worker_lock = threading.Lock()
+logger = logging.getLogger(__name__)
 
-# Cooperative cancellation: job ids the user asked to stop. The worker checks
-# this between games and stops early, keeping whatever was already analyzed.
-_cancelled: set = set()
-_cancel_lock = threading.Lock()
+class _CancelRegistry:
+    """
+    Job ids the user asked to stop.
+
+    Cooperative: the worker polls it between games (and between plies of a
+    game) and stops early, keeping whatever was already analyzed. Guarded by a
+    lock because the flag is set from a Flask request thread and read from the
+    worker thread.
+    """
+
+    def __init__(self) -> None:
+        self._ids: set[int] = set()
+        self._lock = threading.Lock()
+
+    def request(self, job_id: int) -> None:
+        with self._lock:
+            self._ids.add(job_id)
+
+    def is_cancelled(self, job_id: int) -> bool:
+        with self._lock:
+            return job_id in self._ids
+
+    def clear(self, job_id: int) -> None:
+        with self._lock:
+            self._ids.discard(job_id)
+
+
+_cancels = _CancelRegistry()
 
 
 def request_cancel(job_id: int) -> None:
-    with _cancel_lock:
-        _cancelled.add(job_id)
-
-
-def _is_cancelled(job_id: int) -> bool:
-    with _cancel_lock:
-        return job_id in _cancelled
-
-
-def _clear_cancel(job_id: int) -> None:
-    with _cancel_lock:
-        _cancelled.discard(job_id)
+    """Asks the worker to stop the given job at the next safe point."""
+    _cancels.request(job_id)
 
 
 # --- fingerprint -----------------------------------------------------------
@@ -59,7 +75,11 @@ def fingerprint(pgn: str) -> str:
 
 # --- per-game analysis -----------------------------------------------------
 
-def analyze_game_moves(pgn: str, depth: int, cancel_check=None) -> Optional[List[Dict[str, Any]]]:
+def analyze_game_moves(
+    pgn: str,
+    depth: int,
+    cancel_check: Callable[[], bool] | None = None,
+) -> list[dict[str, Any]] | None:
     """
     Analyses a game's main line and returns per-move dicts ready for storage:
     { ply, side, san, uci, fen_before, fen_after, cp_loss, eval, label, phase }.
@@ -71,13 +91,11 @@ def analyze_game_moves(pgn: str, depth: int, cancel_check=None) -> Optional[List
         return None
 
     board = game.board()
-    moves: List[Dict[str, Any]] = []
-    ply = 0
+    moves: list[dict[str, Any]] = []
 
-    for mv in game.mainline_moves():
+    for ply, mv in enumerate(game.mainline_moves(), start=1):
         if cancel_check and cancel_check():
             return None
-        ply += 1
         fen_before = board.fen()
         san = board.san(mv)
         uci = mv.uci()
@@ -122,7 +140,7 @@ def analyze_game_moves(pgn: str, depth: int, cancel_check=None) -> Optional[List
     return moves
 
 
-def _persist_game(profile_id: int, record: Dict[str, Any], moves: List[Dict[str, Any]], depth: int) -> None:
+def _persist_game(profile_id: int, record: dict[str, Any], moves: list[dict[str, Any]], depth: int) -> None:
     view = sources.player_view(record, record.get("_username", ""))
     aggregates = stats.aggregate_game(moves, view["player_color"] or "white", depth)
 
@@ -153,14 +171,14 @@ def _persist_game(profile_id: int, record: Dict[str, Any], moves: List[Dict[str,
 
 # --- planning (dedup + depth conflicts) ------------------------------------
 
-def _classify_records(profile_id: int, records: List[Dict[str, Any]], depth: int) -> Dict[str, Any]:
+def _classify_records(profile_id: int, records: list[dict[str, Any]], depth: int) -> dict[str, Any]:
     """
     Splits fetched records into add / skip (same depth) / depth-conflict buckets,
     annotating each with its fingerprint. Mutates records with `_fingerprint`.
     """
-    to_add: List[Dict[str, Any]] = []
-    same_depth: List[Dict[str, Any]] = []
-    conflicts: List[Dict[str, Any]] = []
+    to_add: list[dict[str, Any]] = []
+    same_depth: list[dict[str, Any]] = []
+    conflicts: list[dict[str, Any]] = []
 
     seen: set = set()
     for rec in records:
@@ -182,7 +200,7 @@ def _classify_records(profile_id: int, records: List[Dict[str, Any]], depth: int
     return {"to_add": to_add, "same_depth": same_depth, "conflicts": conflicts}
 
 
-def preview(profile_id: int, platform: str, username: str, count: int, depth: int) -> Dict[str, Any]:
+def preview(profile_id: int, platform: str, username: str, count: int, depth: int) -> dict[str, Any]:
     """
     Cheap dry-run: fetch the game list and report how many would be added,
     skipped (same depth), or would conflict on depth. No analysis is run.
@@ -203,100 +221,130 @@ def preview(profile_id: int, platform: str, username: str, count: int, depth: in
 
 # --- worker ----------------------------------------------------------------
 
-def _run_job(job_id: int) -> None:
-    job = db.get_job(job_id)
-    if job is None:
-        return
-    import json
-    params = json.loads(job.get("params") or "{}")
-    profile_id = job["profile_id"]
-    platform = params.get("platform", "")
-    username = params.get("username", "")
-    count = int(params.get("count", 10))
-    depth = int(params.get("depth", 14))
-    recompute = bool(params.get("recompute_conflicts", False))
+class IngestWorker:
+    """
+    Owns the job queue and the single daemon thread that drains it.
 
-    # Cancelled while still queued: stop before touching the network/engine.
-    if _is_cancelled(job_id):
-        db.set_job_status(job_id, "cancelled")
-        _clear_cancel(job_id)
-        return
+    The thread is started lazily on the first submitted job and lives for the
+    process's lifetime, so ingestion never runs concurrently with itself — one
+    job at a time, one engine at a time.
+    """
 
-    db.set_job_status(job_id, "running")
-    try:
-        records = sources.fetch(platform, username, count)
-        for r in records:
-            r["_username"] = username
-        plan = _classify_records(profile_id, records, depth)
+    def __init__(self, cancels: _CancelRegistry) -> None:
+        self._queue: queue.Queue[int] = queue.Queue()
+        self._cancels = cancels
+        self._thread: threading.Thread | None = None
+        self._start_lock = threading.Lock()
 
-        work = list(plan["to_add"])
-        if recompute:
-            work += plan["conflicts"]
+    def submit(self, job_id: int) -> None:
+        self._ensure_running()
+        self._queue.put(job_id)
 
-        db.set_job_total(job_id, len(work))
+    def _ensure_running(self) -> None:
+        with self._start_lock:
+            if self._thread is None or not self._thread.is_alive():
+                self._thread = threading.Thread(
+                    target=self._loop, name="player-db-ingest", daemon=True
+                )
+                self._thread.start()
 
-        cancelled = False
-        for rec in work:
-            if _is_cancelled(job_id):
-                cancelled = True
-                break
+    def _loop(self) -> None:
+        while True:
+            job_id = self._queue.get()
             try:
-                moves = analyze_game_moves(rec.get("pgn", ""), depth, lambda: _is_cancelled(job_id))
-            except Exception as e:  # one bad game must not kill the whole job
-                print(f"[player_db] skipped a game during ingest: {e}")
+                self.run_job(job_id)
+            except Exception:  # pragma: no cover - defensive: the worker must survive
+                logger.exception("Worker error on job %s", job_id)
+            finally:
+                self._queue.task_done()
+
+    # --- one job ---
+
+    def run_job(self, job_id: int) -> None:
+        """Fetches, analyses and persists every game a job asks for."""
+        job = db.get_job(job_id)
+        if job is None:
+            return
+
+        params = json.loads(job.get("params") or "{}")
+        profile_id = job["profile_id"]
+        depth = int(params.get("depth", 14))
+
+        # Cancelled while still queued: stop before touching the network/engine.
+        if self._cancels.is_cancelled(job_id):
+            db.set_job_status(job_id, "cancelled")
+            self._cancels.clear(job_id)
+            return
+
+        db.set_job_status(job_id, "running")
+        try:
+            work = self._plan(job_id, profile_id, params, depth)
+            db.set_job_total(job_id, len(work))
+            cancelled = self._process(job_id, profile_id, work, depth)
+            db.set_job_status(job_id, "cancelled" if cancelled else "done")
+        except Exception as e:
+            logger.exception("Ingest job %s failed", job_id)
+            db.set_job_status(job_id, "error", error=str(e))
+        finally:
+            self._cancels.clear(job_id)
+
+    def _plan(self, job_id: int, profile_id: int,
+              params: dict[str, Any], depth: int) -> list[dict[str, Any]]:
+        """Fetches the archive and returns the games this job should analyse."""
+        username = params.get("username", "")
+        records = sources.fetch(params.get("platform", ""), username, int(params.get("count", 10)))
+        for record in records:
+            record["_username"] = username
+
+        plan = _classify_records(profile_id, records, depth)
+        work = list(plan["to_add"])
+        if params.get("recompute_conflicts", False):
+            work += plan["conflicts"]
+        return work
+
+    def _process(self, job_id: int, profile_id: int,
+                 work: list[dict[str, Any]], depth: int) -> bool:
+        """Analyses and stores each game. Returns True if the job was cancelled."""
+        for record in work:
+            if self._cancels.is_cancelled(job_id):
+                return True
+
+            try:
+                moves = analyze_game_moves(
+                    record.get("pgn", ""), depth,
+                    lambda: self._cancels.is_cancelled(job_id),
+                )
+            except Exception:  # one bad game must not kill the whole job
+                logger.warning("Skipped a game during ingest of job %s", job_id, exc_info=True)
                 moves = None
 
             # analyze_game_moves returns None mid-game when cancelled — that
             # game is abandoned (not persisted) and must not count as done.
-            if moves is None and _is_cancelled(job_id):
-                cancelled = True
-                break
+            if moves is None and self._cancels.is_cancelled(job_id):
+                return True
 
             if moves:
                 try:
-                    _persist_game(profile_id, rec, moves, depth)
-                except Exception as e:
-                    print(f"[player_db] failed to persist a game: {e}")
+                    _persist_game(profile_id, record, moves, depth)
+                except Exception:
+                    logger.error("Failed to persist a game for job %s", job_id, exc_info=True)
             db.bump_job_done(job_id)
 
-        db.set_job_status(job_id, "cancelled" if cancelled else "done")
-    except Exception as e:
-        db.set_job_status(job_id, "error", error=str(e))
-    finally:
-        _clear_cancel(job_id)
+        return False
 
 
-def _worker_loop() -> None:
-    while True:
-        job_id = _job_queue.get()
-        try:
-            _run_job(job_id)
-        except Exception as e:  # pragma: no cover - defensive
-            print(f"[player_db] worker error on job {job_id}: {e}")
-        finally:
-            _job_queue.task_done()
-
-
-def _ensure_worker() -> None:
-    global _worker_started
-    with _worker_lock:
-        if not _worker_started:
-            t = threading.Thread(target=_worker_loop, name="player-db-ingest", daemon=True)
-            t.start()
-            _worker_started = True
+_worker = IngestWorker(_cancels)
 
 
 def start_ingest(profile_id: int, platform: str, username: str, count: int,
                  depth: int, recompute_conflicts: bool) -> int:
     """Creates a queued job and hands it to the worker. Returns the job id."""
-    params = {
+    job_id = db.create_job(profile_id, {
         "platform": platform,
         "username": username,
         "count": count,
         "depth": depth,
         "recompute_conflicts": recompute_conflicts,
-    }
-    job_id = db.create_job(profile_id, params)
-    _ensure_worker()
-    _job_queue.put(job_id)
+    })
+    _worker.submit(job_id)
     return job_id

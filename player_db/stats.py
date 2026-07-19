@@ -10,7 +10,7 @@ Sources of truth (keep in sync):
 """
 
 import math
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from . import db
 
@@ -35,14 +35,14 @@ MATERIAL_WEIGHTS = {"q": 9, "r": 5, "b": 3, "n": 3}
 PHASES = ["opening", "middlegame", "endgame"]
 
 
-def move_accuracy(cp_loss: Optional[float]) -> Optional[float]:
+def move_accuracy(cp_loss: float | None) -> float | None:
     """accuracy.js::moveAccuracy — cp loss (centipawns) to accuracy in [0, 100]."""
     if cp_loss is None:
         return None
     return max(0.0, min(100.0, 100.0 * math.exp(-_ACCURACY_DECAY * cp_loss)))
 
 
-def estimate_elo(acpl: Optional[float]) -> Optional[int]:
+def estimate_elo(acpl: float | None) -> int | None:
     """game-review.js::estimateElo — piecewise-linear ACPL -> rough Elo."""
     if acpl is None or math.isnan(acpl):
         return None
@@ -59,7 +59,7 @@ def estimate_elo(acpl: Optional[float]) -> Optional[int]:
 
 def material_phase_score(fen: str) -> int:
     """game-review.js::materialPhaseScore — sum of non-pawn piece weights."""
-    placement = fen.split(" ")[0]
+    placement = fen.split(" ", maxsplit=1)[0]
     score = 0
     for ch in placement:
         w = MATERIAL_WEIGHTS.get(ch.lower())
@@ -68,7 +68,7 @@ def material_phase_score(fen: str) -> int:
     return score
 
 
-def assign_phases(moves: List[Dict[str, Any]]) -> None:
+def assign_phases(moves: list[dict[str, Any]]) -> None:
     """
     Tags each main-line move dict with a `phase`, replicating the two-pass logic
     of game-review.js::computeGameReview. `moves` must be ordered by ply and each
@@ -97,7 +97,7 @@ def assign_phases(moves: List[Dict[str, Any]]) -> None:
             m["phase"] = "middlegame"
 
 
-def game_opening_name(moves: List[Dict[str, Any]]) -> str:
+def game_opening_name(moves: list[dict[str, Any]]) -> str:
     """Deepest recognized book opening on the main line (like currentOpeningName)."""
     name = "Starting Position"
     for m in moves:
@@ -110,18 +110,18 @@ def game_opening_name(moves: List[Dict[str, Any]]) -> str:
 
 
 def aggregate_game(
-    moves: List[Dict[str, Any]],
+    moves: list[dict[str, Any]],
     player_color: str,
     depth: int,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Per-game summary from the tracked player's perspective. `moves` are the
     main-line move dicts (with cp_loss, label, phase, opening) already tagged by
     assign_phases. Aggregates only the tracked side's moves.
     """
-    cp_losses: List[float] = []
-    accuracies: List[float] = []
-    label_counts: Dict[str, int] = {}
+    cp_losses: list[float] = []
+    accuracies: list[float] = []
+    label_counts: dict[str, int] = {}
 
     for m in moves:
         if m["side"] != player_color:
@@ -152,7 +152,7 @@ def aggregate_game(
 
 # --- dashboard aggregation -------------------------------------------------
 
-def _winrate_bucket() -> Dict[str, int]:
+def _winrate_bucket() -> dict[str, int]:
     return {"win": 0, "loss": 0, "draw": 0}
 
 
@@ -160,7 +160,7 @@ def _winrate_bucket() -> Dict[str, int]:
 TIME_CLASS_ORDER = ["ultraBullet", "bullet", "blitz", "rapid", "classical", "daily", "correspondence"]
 
 
-def _summarize(games: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _summarize(games: list[dict[str, Any]]) -> dict[str, Any]:
     """Win/draw/loss counts + move-weighted accuracy/acpl/est_elo for a game set."""
     wdl = _winrate_bucket()
     acc_sum = acc_w = acpl_sum = acpl_w = 0.0
@@ -192,7 +192,7 @@ def _time_class_order_key(tc: str) -> tuple:
     return (TIME_CLASS_ORDER.index(tc), "") if tc in TIME_CLASS_ORDER else (len(TIME_CLASS_ORDER), tc)
 
 
-def build_dashboard(profile_id: int, time_class: Optional[str] = None) -> Dict[str, Any]:
+def build_dashboard(profile_id: int, time_class: str | None = None) -> dict[str, Any]:
     """
     Aggregates a profile's games into the dashboard payload. KPIs/charts reflect
     the selected `time_class` (None = all); the `time_controls` breakdown is
@@ -201,7 +201,7 @@ def build_dashboard(profile_id: int, time_class: Optional[str] = None) -> Dict[s
     all_games = db.games_for_profile(profile_id)
 
     # --- grouping: per time-control summary over ALL games ---
-    tc_groups: Dict[str, List[Dict[str, Any]]] = {}
+    tc_groups: dict[str, list[dict[str, Any]]] = {}
     for g in all_games:
         tc = g.get("time_class") or "unknown"
         tc_groups.setdefault(tc, []).append(g)
@@ -211,13 +211,15 @@ def build_dashboard(profile_id: int, time_class: Optional[str] = None) -> Dict[s
     ]
 
     # --- filtered subset for KPIs/charts ---
-    games = [g for g in all_games if (g.get("time_class") or "unknown") == time_class] if time_class else all_games
+    games = all_games if not time_class else [
+        g for g in all_games if (g.get("time_class") or "unknown") == time_class
+    ]
 
     summary = _summarize(games)
     by_color = {"white": _winrate_bucket(), "black": _winrate_bucket()}
-    openings: Dict[str, Dict[str, Any]] = {}
-    label_totals: Dict[str, int] = {}
-    trend: List[Dict[str, Any]] = []
+    openings: dict[str, dict[str, Any]] = {}
+    label_totals: dict[str, int] = {}
+    trend: list[dict[str, Any]] = []
 
     for g in games:
         res = g.get("player_result")

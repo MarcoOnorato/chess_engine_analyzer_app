@@ -11,9 +11,9 @@ import json
 import os
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 def _default_db_path() -> str:
@@ -38,7 +38,7 @@ _LABEL_COL = {
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def get_conn() -> sqlite3.Connection:
@@ -55,11 +55,23 @@ def get_conn() -> sqlite3.Connection:
     return conn
 
 
-def _row_to_dict(row: Optional[sqlite3.Row]) -> Optional[Dict[str, Any]]:
+def _row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
     return dict(row) if row is not None else None
 
 
-def _rows_to_dicts(rows: List[sqlite3.Row]) -> List[Dict[str, Any]]:
+def _inserted_id(cur: sqlite3.Cursor) -> int:
+    """Row id of the INSERT just executed on `cur`.
+
+    sqlite3 leaves `lastrowid` as None when the statement inserted nothing;
+    every caller here treats the id as a hard requirement, so surface it
+    instead of silently returning a bogus row id.
+    """
+    if cur.lastrowid is None:
+        raise RuntimeError("INSERT did not produce a row id")
+    return int(cur.lastrowid)
+
+
+def _rows_to_dicts(rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
@@ -188,10 +200,10 @@ def create_profile(label: str, platform: str = "", username: str = "", notes: st
         (label, platform, username, notes, now_iso()),
     )
     conn.commit()
-    return int(cur.lastrowid)
+    return _inserted_id(cur)
 
 
-def list_profiles() -> List[Dict[str, Any]]:
+def list_profiles() -> list[dict[str, Any]]:
     conn = get_conn()
     rows = conn.execute(
         """
@@ -205,7 +217,7 @@ def list_profiles() -> List[Dict[str, Any]]:
     return _rows_to_dicts(rows)
 
 
-def get_profile(profile_id: int) -> Optional[Dict[str, Any]]:
+def get_profile(profile_id: int) -> dict[str, Any] | None:
     conn = get_conn()
     row = conn.execute("SELECT * FROM profiles WHERE id = ?", (profile_id,)).fetchone()
     return _row_to_dict(row)
@@ -219,7 +231,7 @@ def delete_profile(profile_id: int) -> None:
 
 # --- GAMES -----------------------------------------------------------------
 
-def get_game_by_fingerprint(profile_id: int, fingerprint: str) -> Optional[Dict[str, Any]]:
+def get_game_by_fingerprint(profile_id: int, fingerprint: str) -> dict[str, Any] | None:
     conn = get_conn()
     row = conn.execute(
         "SELECT * FROM games WHERE profile_id = ? AND pgn_fingerprint = ?",
@@ -228,13 +240,13 @@ def get_game_by_fingerprint(profile_id: int, fingerprint: str) -> Optional[Dict[
     return _row_to_dict(row)
 
 
-def get_game(game_id: int) -> Optional[Dict[str, Any]]:
+def get_game(game_id: int) -> dict[str, Any] | None:
     conn = get_conn()
     row = conn.execute("SELECT * FROM games WHERE id = ?", (game_id,)).fetchone()
     return _row_to_dict(row)
 
 
-def upsert_game(profile_id: int, meta: Dict[str, Any], aggregates: Dict[str, Any]) -> int:
+def upsert_game(profile_id: int, meta: dict[str, Any], aggregates: dict[str, Any]) -> int:
     """
     Inserts or replaces a game row (dedup key: profile_id + pgn_fingerprint) and
     returns its id. `meta` carries the source/PGN metadata; `aggregates` carries
@@ -278,15 +290,15 @@ def upsert_game(profile_id: int, meta: Dict[str, Any], aggregates: Dict[str, Any
         conn.execute(f"UPDATE games SET {set_clause} WHERE id = :_id", fields)
     else:
         cols = ", ".join(fields.keys())
-        placeholders = ", ".join(f":{k}" for k in fields.keys())
+        placeholders = ", ".join(f":{k}" for k in fields)
         cur = conn.execute(f"INSERT INTO games ({cols}) VALUES ({placeholders})", fields)
-        game_id = int(cur.lastrowid)
+        game_id = _inserted_id(cur)
 
     conn.commit()
     return game_id
 
 
-def moves_for_game(game_id: int) -> List[Dict[str, Any]]:
+def moves_for_game(game_id: int) -> list[dict[str, Any]]:
     """Stored per-ply analysis of one game, in play order."""
     conn = get_conn()
     rows = conn.execute(
@@ -298,7 +310,7 @@ def moves_for_game(game_id: int) -> List[Dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
-def replace_moves(game_id: int, moves: List[Dict[str, Any]]) -> None:
+def replace_moves(game_id: int, moves: list[dict[str, Any]]) -> None:
     conn = get_conn()
     conn.execute("DELETE FROM moves WHERE game_id = ?", (game_id,))
     conn.executemany(
@@ -315,7 +327,7 @@ def replace_moves(game_id: int, moves: List[Dict[str, Any]]) -> None:
     conn.commit()
 
 
-def games_for_profile(profile_id: int) -> List[Dict[str, Any]]:
+def games_for_profile(profile_id: int) -> list[dict[str, Any]]:
     conn = get_conn()
     rows = conn.execute(
         """
@@ -331,13 +343,45 @@ def games_for_profile(profile_id: int) -> List[Dict[str, Any]]:
     return _rows_to_dicts(rows)
 
 
-def phase_accuracy_rows(profile_id: int, time_class: Optional[str] = None) -> List[Dict[str, Any]]:
+def brilliant_moves(profile_id: int, time_class: str | None = None) -> list[dict[str, Any]]:
+    """The tracked player's Brilliant-labelled moves across their games, newest
+    game first (then in play order within a game).
+
+    Each row carries enough game context to open the game in Review at the exact
+    ply. Only the tracked side's moves count, mirroring the `brilliant` KPI.
+    Optionally restricted to a single time control.
+    """
+    conn = get_conn()
+    params: list[Any] = [profile_id]
+    tc_clause = ""
+    if time_class:
+        tc_clause = "AND g.time_class = ?"
+        params.append(time_class)
+    rows = conn.execute(
+        f"""
+        SELECT g.id AS game_id, g.white, g.black, g.opening, g.result,
+               g.player_color, g.player_result, g.played_at, g.time_class,
+               g.url, g.analysis_depth,
+               m.ply, m.san, m.uci, m.fen_before, m.fen_after,
+               m.eval, m.eval_mate, m.best_san
+        FROM moves m
+        JOIN games g ON g.id = m.game_id
+        WHERE g.profile_id = ? AND m.label = 'Brilliant'
+              AND m.side = g.player_color {tc_clause}
+        ORDER BY COALESCE(g.played_at, g.analyzed_at) DESC, m.ply
+        """,
+        params,
+    ).fetchall()
+    return _rows_to_dicts(rows)
+
+
+def phase_accuracy_rows(profile_id: int, time_class: str | None = None) -> list[dict[str, Any]]:
     """Average per-move accuracy proxy (cp_loss) grouped by phase, tracked side only.
 
     Optionally restricted to a single time control (bullet/blitz/rapid/...).
     """
     conn = get_conn()
-    params: List[Any] = [profile_id]
+    params: list[Any] = [profile_id]
     tc_clause = ""
     if time_class:
         tc_clause = "AND g.time_class = ?"
@@ -359,7 +403,7 @@ def phase_accuracy_rows(profile_id: int, time_class: Optional[str] = None) -> Li
 
 # --- JOBS ------------------------------------------------------------------
 
-def create_job(profile_id: int, params: Dict[str, Any], total: int = 0) -> int:
+def create_job(profile_id: int, params: dict[str, Any], total: int = 0) -> int:
     conn = get_conn()
     ts = now_iso()
     cur = conn.execute(
@@ -368,10 +412,10 @@ def create_job(profile_id: int, params: Dict[str, Any], total: int = 0) -> int:
         (profile_id, total, json.dumps(params), ts, ts),
     )
     conn.commit()
-    return int(cur.lastrowid)
+    return _inserted_id(cur)
 
 
-def set_job_status(job_id: int, status: str, error: Optional[str] = None) -> None:
+def set_job_status(job_id: int, status: str, error: str | None = None) -> None:
     conn = get_conn()
     conn.execute(
         "UPDATE ingest_jobs SET status = ?, error = ?, updated_at = ? WHERE id = ?",
@@ -398,7 +442,7 @@ def bump_job_done(job_id: int) -> None:
     conn.commit()
 
 
-def get_job(job_id: int) -> Optional[Dict[str, Any]]:
+def get_job(job_id: int) -> dict[str, Any] | None:
     conn = get_conn()
     row = conn.execute("SELECT * FROM ingest_jobs WHERE id = ?", (job_id,)).fetchone()
     return _row_to_dict(row)

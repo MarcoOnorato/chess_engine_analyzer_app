@@ -23,6 +23,7 @@
 
 import { STARTING_FEN, state } from "./state.js";
 import { api } from "./api.js";
+import { fetchChessComGames, fetchLichessGames, gameDate } from "./archives.js";
 import { readReviewGame } from "./training-handoff.js";
 import { submitOnEnter } from "./form-enter.js";
 
@@ -320,9 +321,7 @@ async function parsePgnSource(pgn, label) {
 
 async function loadOpeningCache() {
   if (state.cachedOpenings && Object.keys(state.cachedOpenings).length) return state.cachedOpenings;
-  const res = await fetch("/api/list_openings");
-  if (!res.ok) throw new Error("Opening list failed");
-  state.cachedOpenings = await res.json();
+  state.cachedOpenings = await api.get("/api/list_openings");
   return state.cachedOpenings;
 }
 
@@ -363,17 +362,11 @@ async function fetchLichessChoices() {
   if (!username) return;
   const list = document.getElementById("ts-remote-games");
   list.innerHTML = "<div class='dim'>Fetching…</div>";
-  const res = await fetch(
-    `https://lichess.org/api/games/user/${encodeURIComponent(username)}?max=${encodeURIComponent(count)}&pgnInJson=true`,
-    { headers: { Accept: "application/x-ndjson" } }
-  );
-  if (!res.ok) throw new Error("Lichess fetch failed");
-  const text = await res.text();
-  const games = text.split("\n").filter(Boolean).map((line) => JSON.parse(line)).filter((g) => g.pgn);
+  const games = await fetchLichessGames(username, count);
   renderRemoteGames(games.map((g) => ({
     pgn: g.pgn,
-    label: `${g.players.white.user?.name || "Anonymous"} vs ${g.players.black.user?.name || "Anonymous"}`,
-    meta: `${new Date(g.createdAt).toLocaleDateString()} • ${g.speed} • ${g.variant}`,
+    label: `${g.white} vs ${g.black}`,
+    meta: [gameDate(g), g.meta].filter(Boolean).join(" • "),
   })));
 }
 
@@ -384,16 +377,11 @@ async function fetchChessComChoices() {
   if (!username || !year || !month) return;
   const list = document.getElementById("ts-remote-games");
   list.innerHTML = "<div class='dim'>Fetching…</div>";
-  const res = await fetch(
-    `https://api.chess.com/pub/player/${encodeURIComponent(username)}/games/${year}/${month}`
-  );
-  if (!res.ok) throw new Error("Chess.com fetch failed");
-  const data = await res.json();
-  const games = (data.games || []).reverse().filter((g) => g.pgn);
+  const games = await fetchChessComGames(username, year, month);
   renderRemoteGames(games.map((g) => ({
     pgn: g.pgn,
-    label: `${g.white.username} vs ${g.black.username}`,
-    meta: `${new Date(g.end_time * 1000).toLocaleDateString()} • ${g.time_class}`,
+    label: `${g.white} vs ${g.black}`,
+    meta: [gameDate(g), g.meta].filter(Boolean).join(" • "),
   })));
 }
 

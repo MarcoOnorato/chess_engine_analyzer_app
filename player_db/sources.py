@@ -19,8 +19,8 @@ import json
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 _UA = "chess-engine-analyzer/1.0 (personal player-db feature)"
 
@@ -40,28 +40,28 @@ def _get(url: str, accept: str = "application/json", timeout: int = 30) -> bytes
         raise SourceError(f"Network error for {url}: {e.reason}") from e
 
 
-def _epoch_to_iso(value: Optional[float], unit: str) -> Optional[str]:
+def _epoch_to_iso(value: float | None, unit: str) -> str | None:
     if not value:
         return None
     seconds = value / 1000.0 if unit == "ms" else float(value)
     try:
-        return datetime.fromtimestamp(seconds, tz=timezone.utc).isoformat()
+        return datetime.fromtimestamp(seconds, tz=UTC).isoformat()
     except (OverflowError, OSError, ValueError):
         return None
 
 
 # --- LICHESS ---------------------------------------------------------------
 
-def fetch_lichess(username: str, count: int) -> List[Dict[str, Any]]:
+def fetch_lichess(username: str, count: int) -> list[dict[str, Any]]:
     """Fetches the most recent `count` games for a Lichess user (NDJSON)."""
     url = (
         f"https://lichess.org/api/games/user/{urllib.parse.quote(username)}"
         f"?max={int(count)}&pgnInJson=true"
     )
     raw = _get(url, accept="application/x-ndjson").decode("utf-8", "replace")
-    records: List[Dict[str, Any]] = []
-    for line in raw.splitlines():
-        line = line.strip()
+    records: list[dict[str, Any]] = []
+    for raw_line in raw.splitlines():
+        line = raw_line.strip()
         if not line:
             continue
         try:
@@ -97,7 +97,7 @@ def fetch_lichess(username: str, count: int) -> List[Dict[str, Any]]:
 
 # --- CHESS.COM -------------------------------------------------------------
 
-def fetch_chesscom(username: str, count: int) -> List[Dict[str, Any]]:
+def fetch_chesscom(username: str, count: int) -> list[dict[str, Any]]:
     """
     Fetches the most recent `count` games for a Chess.com user by walking the
     monthly archives from newest to oldest until enough games are collected.
@@ -109,7 +109,7 @@ def fetch_chesscom(username: str, count: int) -> List[Dict[str, Any]]:
     except json.JSONDecodeError as e:
         raise SourceError("Malformed archives response from Chess.com") from e
 
-    records: List[Dict[str, Any]] = []
+    records: list[dict[str, Any]] = []
     for archive_url in reversed(archives):  # newest month first
         if len(records) >= count:
             break
@@ -148,7 +148,7 @@ def fetch_chesscom(username: str, count: int) -> List[Dict[str, Any]]:
     return records[:count]
 
 
-def fetch(platform: str, username: str, count: int) -> List[Dict[str, Any]]:
+def fetch(platform: str, username: str, count: int) -> list[dict[str, Any]]:
     platform = (platform or "").lower()
     if platform in ("lichess", "li"):
         return fetch_lichess(username, count)
@@ -159,7 +159,7 @@ def fetch(platform: str, username: str, count: int) -> List[Dict[str, Any]]:
 
 # --- PLAYER PERSPECTIVE ----------------------------------------------------
 
-def player_view(record: Dict[str, Any], username: str) -> Dict[str, Optional[str]]:
+def player_view(record: dict[str, Any], username: str) -> dict[str, str | None]:
     """
     Determines which color the tracked player had and their result (win/loss/
     draw) from the record. Falls back to white if the username matches neither

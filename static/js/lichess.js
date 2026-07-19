@@ -1,12 +1,11 @@
 /**
  * @fileoverview Lichess import modal.
  *
- * Calls the public Lichess API:
- *   https://lichess.org/api/games/user/{username}
- * and renders the games. Selecting a game writes its
- * PGN into `#pgnInput` and triggers the standard PGN-loading flow.
+ * Renders the games returned by `archives.fetchLichessGames`. Selecting a game
+ * hands its PGN to the standard PGN-loading flow.
  */
 
+import { fetchLichessGames, gameDate } from "./archives.js";
 import { submitOnEnter } from "./form-enter.js";
 
 /**
@@ -46,56 +45,35 @@ export function bindLichess() {
         "<div style='color: #888; text-align:center;'>Fetching Lichess games... ⏳</div>";
   
       try {
-        // pgnInJson=true to have the PGN in the json object
-        const response = await fetch(
-          `https://lichess.org/api/games/user/${encodeURIComponent(username)}?max=${encodeURIComponent(count)}&pgnInJson=true`,
-          { headers: { Accept: "application/x-ndjson" } }
-        );
-  
-        if (!response.ok)
-          throw new Error("Lichess user not found or API error.");
-  
-        // Lichess returns NDJSON. Read the full response: one network chunk
-        // can contain only the first 1-2 games, depending on buffering.
-        const text = await response.text();
-        const lines = text.split("\n").filter((line) => line.trim() !== "");
-        
-        if (lines.length === 0) {
+        const games = await fetchLichessGames(username, count);
+
+        if (games.length === 0) {
           listEl.innerHTML =
             "<div style='color: #888; text-align:center;'>No games found.</div>";
           return;
         }
-  
+
         listEl.innerHTML = "";
-  
-        lines.forEach((line) => {
-          const game = JSON.parse(line);
+
+        games.forEach((game) => {
           const item = document.createElement("div");
           item.className = "opening-item";
-  
-          const white = game.players.white.user?.name || "Anonymous";
-          const black = game.players.black.user?.name || "Anonymous";
-          const dateStr = new Date(game.createdAt).toLocaleDateString();
 
-          let result = "½-½";
-          if (game.winner === "white") result = "1-0";
-          else if (game.winner === "black") result = "0-1";
-  
           item.innerHTML = `
-            <span class="opening-name">${white} vs ${black} <span style="color:#aaa; font-size:0.8em; margin-left:5px;">(${result})</span></span>
-            <span class="opening-moves">${dateStr} • ${game.speed} • ${game.variant}</span>
+            <span class="opening-name">${game.white} vs ${game.black} <span style="color:#aaa; font-size:0.8em; margin-left:5px;">(${game.result})</span></span>
+            <span class="opening-moves">${gameDate(game)} • ${game.meta}</span>
           `;
-  
+
           item.onclick = () => {
             modal.classList.add("hidden");
-            
+
             if (window.loadAndAnalyze) {
               window.loadAndAnalyze(game.pgn);
             } else {
               console.error("loadAndAnalyze not found in window");
             }
           };
-  
+
           listEl.appendChild(item);
         });
       } catch (e) {

@@ -57,13 +57,145 @@ function resultLabel(res) {
 function renderKpis(k) {
   const el = document.getElementById("kpis");
   const wr = k.winrate == null ? "--" : `${k.winrate}%`;
+  const clickable = k.brilliant > 0 ? " pdb-kpi-clickable" : "";
   el.innerHTML = [
     kpiCard(k.games, "Games"),
     kpiCard(wr, `Win rate (${k.wins}-${k.draws}-${k.losses})`),
     kpiCard(fmt(k.avg_accuracy, "%"), "Avg accuracy"),
     kpiCard(k.est_elo == null ? "--" : `~${k.est_elo}`, "Est. Elo"),
-    kpiCard(k.brilliant, "Brilliant moves"),
+    `<div id="kpiBrilliant" class="pdb-kpi${clickable}" title="${k.brilliant > 0 ? "Explore the brilliant moves" : ""}">` +
+      `<div class="pdb-kpi-value">${k.brilliant}</div>` +
+      `<div class="pdb-kpi-label">Brilliant moves</div></div>`,
   ].join("");
+
+  const brilBtn = document.getElementById("kpiBrilliant");
+  if (brilBtn && k.brilliant > 0) brilBtn.onclick = openBrilliants;
+}
+
+/* -------------------------------------------------------------------------
+   Brilliant-move explorer: a modal grid of the tracked player's brilliancies,
+   each with a Unicode mini-board and a deep link into the Review page (jumping
+   straight to that ply). Scoped to the active time-control filter.
+   ------------------------------------------------------------------------- */
+
+const PIECE_GLYPH = {
+  P: "♙", N: "♘", B: "♗", R: "♖", Q: "♕", K: "♔",
+  p: "♟", n: "♞", b: "♝", r: "♜", q: "♛", k: "♚",
+};
+
+/** FEN placement field -> 8x8 array; row 0 = rank 8, col 0 = file a. */
+function fenToGrid(fen) {
+  const ranks = String(fen || "").split(" ")[0].split("/");
+  const grid = [];
+  for (let r = 0; r < 8; r++) {
+    const cells = [];
+    for (const ch of ranks[r] || "8") {
+      if (ch >= "1" && ch <= "8") {
+        for (let i = 0; i < Number(ch); i++) cells.push(null);
+      } else {
+        cells.push(ch);
+      }
+    }
+    while (cells.length < 8) cells.push(null);
+    grid.push(cells);
+  }
+  return grid;
+}
+
+/** Square name ("e4") -> [row, col] in the rank-8-first grid. */
+function sqToRc(sq) {
+  return [8 - Number(sq[1]), sq.charCodeAt(0) - 97];
+}
+
+/** Renders a static board from `fen`, oriented for `color`, with the from/to
+ *  squares of `uci` highlighted. */
+function miniBoard(fen, color, uci) {
+  const grid = fenToGrid(fen);
+  const hl = new Set();
+  if (uci && uci.length >= 4) {
+    for (const sq of [uci.slice(0, 2), uci.slice(2, 4)]) {
+      const [r, c] = sqToRc(sq);
+      hl.add(`${r},${c}`);
+    }
+  }
+  const seq = [0, 1, 2, 3, 4, 5, 6, 7];
+  const rows = color === "black" ? [...seq].reverse() : seq;
+  const cols = color === "black" ? [...seq].reverse() : seq;
+  let cells = "";
+  for (const r of rows) {
+    for (const c of cols) {
+      const rankFromBottom = 8 - r;
+      const light = (c + rankFromBottom - 1) % 2 === 1;
+      const p = grid[r][c];
+      const glyph = p ? `<span class="${p === p.toUpperCase() ? "wp" : "bp"}">${PIECE_GLYPH[p] || ""}</span>` : "";
+      cells += `<div class="pdb-mini-sq ${light ? "light" : "dark"}${hl.has(`${r},${c}`) ? " hl" : ""}">${glyph}</div>`;
+    }
+  }
+  return `<div class="pdb-mini">${cells}</div>`;
+}
+
+/** Position evaluation from the tracked player's perspective, as a short tag. */
+function evalLabel(b) {
+  const sign = b.player_color === "black" ? -1 : 1;
+  if (b.eval_mate != null) {
+    const m = b.eval_mate * sign;
+    return `#${m < 0 ? "-" : ""}${Math.abs(m)}`;
+  }
+  if (b.eval == null) return "";
+  const v = b.eval * sign;
+  return `${v > 0 ? "+" : ""}${v.toFixed(1)}`;
+}
+
+function brilliantCard(b) {
+  const color = b.player_color === "black" ? "black" : "white";
+  const opp = b.player_color === "white" ? b.black : b.white;
+  const date = b.played_at ? b.played_at.slice(0, 10) : "";
+  const moveNo = Math.ceil(b.ply / 2);
+  const dots = b.ply % 2 === 1 ? "." : "...";
+  const ev = evalLabel(b);
+  const d = reviewDepth();
+  const href = `/?pgn_game=${b.game_id}&ply=${b.ply}${d ? `&depth=${d}` : ""}`;
+  return `
+    <div class="pdb-bril-card">
+      ${miniBoard(b.fen_before, color, b.uci)}
+      <div class="pdb-bril-move">${moveNo}${dots} ${esc(b.san)}!!</div>
+      <div class="pdb-bril-meta">
+        <div><span class="opp">${tcLabel(b.time_class)} vs ${esc(opp || "?")}</span></div>
+        <div>${date}${b.opening ? " · " + esc(b.opening) : ""}${ev ? " · " + ev : ""}</div>
+      </div>
+      <a class="pdb-btn pdb-btn-ghost pdb-btn-sm" href="${href}">Open in Review</a>
+    </div>`;
+}
+
+function closeBrilliants() {
+  document.getElementById("brilliantsModal").classList.add("hidden");
+  document.removeEventListener("keydown", onBrilliantsKey);
+}
+
+function onBrilliantsKey(e) {
+  if (e.key === "Escape") closeBrilliants();
+}
+
+async function openBrilliants() {
+  const modal = document.getElementById("brilliantsModal");
+  const body = document.getElementById("brilliantsBody");
+  body.innerHTML = `<div class="pdb-empty">Loading…</div>`;
+  modal.classList.remove("hidden");
+
+  document.getElementById("brilliantsClose").onclick = closeBrilliants;
+  modal.onclick = (e) => { if (e.target === modal) closeBrilliants(); };
+  document.addEventListener("keydown", onBrilliantsKey);
+
+  let moves;
+  try {
+    moves = await api.brilliants(_profileId, _selectedTc);
+  } catch (_) {
+    body.innerHTML = `<div class="pdb-empty">Could not load brilliant moves.</div>`;
+    return;
+  }
+  body.innerHTML = moves.length
+    ? moves.map(brilliantCard).join("")
+    : `<div class="pdb-empty">No brilliant moves for this filter.</div>`;
 }
 
 function renderFilter(timeControls) {

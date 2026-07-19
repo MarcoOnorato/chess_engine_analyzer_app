@@ -61,6 +61,10 @@ export function bindPgnLoader() {
       pgnInput.value = "";
     }
   };
+
+  // Let deep-links (e.g. the Players brilliancy explorer) jump to a ply after
+  // a game is loaded, without importing history.js from the entry point.
+  window.jumpToMainLineIndex = jumpToMainLineIndex;
   
   openModalBtn.onclick = () => {
     modal.style.display = "flex";

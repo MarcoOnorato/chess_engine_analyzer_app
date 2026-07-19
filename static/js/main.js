@@ -14,6 +14,7 @@
  */
 
 import { state } from "./state.js";
+import { api } from "./api.js";
 import { onDrop, onSnapEnd, bindClickToMove } from "./board.js";
 import { analyzeCurrentPosition, renderArrows } from "./analysis.js";
 import { bindNavigation } from "./navigation.js";
@@ -98,9 +99,7 @@ async function maybeLoadGameFromQuery() {
   if (!gameId) return;
 
   try {
-    const res = await fetch(`/api/players/game/${encodeURIComponent(gameId)}/pgn`);
-    if (!res.ok) return;
-    const data = await res.json();
+    const data = await api.get(`/api/players/game/${encodeURIComponent(gameId)}/pgn`);
     if (!data.pgn || !window.loadAndAnalyze) return;
 
     const asked = parseInt(params.get("depth"), 10);
@@ -117,6 +116,13 @@ async function maybeLoadGameFromQuery() {
       data.pgn,
       reuse && data.moves && data.moves.length ? data : null,
     );
+
+    // `?ply=<n>` (used by the brilliancy explorer) lands the cursor on that
+    // move instead of the end of the game.
+    const ply = parseInt(params.get("ply"), 10);
+    if (Number.isFinite(ply) && ply > 0 && window.jumpToMainLineIndex) {
+      window.jumpToMainLineIndex(ply);
+    }
   } catch (e) {
     console.error("Failed to load game from Players DB", e);
   }
