@@ -26,6 +26,7 @@ import { analyzeCurrentPosition } from "./analysis.js";
 import { deleteCurrentNode, promoteCurrentVariation } from "./moves.js";
 import { loadFromCurrentNode } from "./board-arrows.js";
 import { clearBoardSelection } from "./board.js";
+import { renderClocks } from "./clocks.js";
 
 /** Cached reference to the move slider. Initialized in `bindNavigation`. */
 let moveSlider = null;
@@ -70,6 +71,8 @@ export function updatePgnNav() {
   if (deleteBtn) deleteBtn.disabled = !cursor.parent || isOnMainLine(cursor);
 
   if (state.evalChart) state.evalChart.update();
+
+  renderClocks();
 }
 
 /**
@@ -132,6 +135,7 @@ function resetAll() {
   state.blackPlayer = "";
   state.gameResult = "";
   state.playersPrefix = "";
+  state.hasClocks = false;
   state.currentOpeningName = "Starting Position";
 
   const openingEl = document.getElementById("openingName");
@@ -254,6 +258,7 @@ export function bindNavigation() {
       const isFlipped = evalBar.style.flexDirection === "column";
       evalBar.style.flexDirection = isFlipped ? "column-reverse" : "column";
     }
+    renderClocks();  // clocks swap top/bottom with the board orientation
   };
   document.getElementById("undoBtn").onclick = undoLastMove;
 

@@ -54,9 +54,12 @@ def _epoch_to_iso(value: float | None, unit: str) -> str | None:
 
 def fetch_lichess(username: str, count: int) -> list[dict[str, Any]]:
     """Fetches the most recent `count` games for a Lichess user (NDJSON)."""
+    # clocks=true keeps the [%clk] move times in the PGN, which the time-
+    # management stats and the Review-board clocks read. Chess.com includes them
+    # by default; Lichess omits them unless asked.
     url = (
         f"https://lichess.org/api/games/user/{urllib.parse.quote(username)}"
-        f"?max={int(count)}&pgnInJson=true"
+        f"?max={int(count)}&pgnInJson=true&clocks=true"
     )
     raw = _get(url, accept="application/x-ndjson").decode("utf-8", "replace")
     records: list[dict[str, Any]] = []

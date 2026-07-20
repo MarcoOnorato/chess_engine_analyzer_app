@@ -226,7 +226,8 @@ async function loadProfileGames(profileId) {
   if (!list) return;
   list.innerHTML = "<div class='dim'>Loading games…</div>";
   try {
-    const games = await api.get(`/api/players/${profileId}/games`);
+    const resp = await api.get(`/api/players/${profileId}/games`);
+    const games = resp.games || [];
     list.innerHTML = "";
     if (!games.length) {
       list.innerHTML = "<div class='dim'>This profile has no games yet.</div>";

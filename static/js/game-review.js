@@ -4,14 +4,14 @@
  * breakdown (Brilliant → Blunder counts) per side.
  *
  * Everything here is derived from data already attached to main-line nodes
- * by the PGN analysis pipeline (`node.cpLoss`, `node.evalData`, `node.opening`)
- * — no extra backend calls. The Elo estimate is a rough, clearly-labeled
- * heuristic (piecewise-linear over average centipawn loss), not a rating
- * computation — chess.com's own algorithm is not public.
+ * by the PGN analysis pipeline (`node.cpLoss`, `node.eval`, `node.evalData`,
+ * `node.opening`) — no extra backend calls. The Elo estimate is a rough,
+ * clearly-labeled heuristic (piecewise-linear over win%-based accuracy), not a
+ * rating computation — chess.com's own algorithm is not public.
  */
 
 import { mainLineNodes, state } from "./state.js";
-import { moveAccuracy } from "./accuracy.js";
+import { moveWinLoss, accuracyFromWinLoss } from "./accuracy.js";
 
 const PANEL_ID = "gameReviewPanel";
 const BODY_ID = "gameReviewBody";
@@ -56,35 +56,42 @@ export function labelStyle(label) {
   return hit ? { symbol: hit.symbol, color: hit.color } : { symbol: "", color: "" };
 }
 
-/** Control points for the ACPL → estimated-Elo curve (piecewise linear). */
-const ELO_CURVE = [
-  [0, 2900], [5, 2700], [10, 2500], [15, 2300], [20, 2100],
-  [30, 1900], [40, 1700], [50, 1500], [60, 1300], [80, 1100],
-  [100, 900], [150, 650], [250, 450],
-];
+/**
+ * Accuracy% → estimated Elo. Strongly non-linear: win%-based accuracy compresses
+ * near 100%, so Elo rises with the reciprocal of the "imperfection" (100 − acc):
+ *   elo = ELO_A + ELO_B / (100 − accuracy),  clamped to [ELO_MIN, ELO_MAX].
+ * A two-parameter fit to real Lichess ratings (blitz ~85% ↔ ~1250, rapid ~88% ↔
+ * ~1540) and Carlsen/DrNykterstein (~93.2% ↔ ~2800). Kept in sync with
+ * player_db/stats.py.
+ */
+const ELO_A = -90;
+const ELO_B = 19800;
+const ELO_MIN = 250;
+const ELO_MAX = 3200;
 
 const PHASES = ["opening", "middlegame", "endgame"];
 const PHASE_LABELS = { opening: "Opening", middlegame: "Middlegame", endgame: "Endgame" };
 
 /**
- * Maps average centipawn loss to a rough estimated Elo via piecewise-linear
- * interpolation over ELO_CURVE, clamped at both ends.
+ * Per-move cp-loss cap for the ACPL / est-Elo averages. A single catastrophic
+ * move (missed mate, hung queen) can lose thousands of centipawns, which would
+ * dominate a raw mean and crater the estimate. Cap at ~10 pawns, as Lichess
+ * does. Mirrors player_db/db.py::CP_LOSS_CAP.
+ */
+const CP_LOSS_CAP = 1000;
+
+/**
+ * Maps win%-based game accuracy to a rough estimated Elo via
+ * elo = ELO_A + ELO_B / (100 − accuracy), clamped to [ELO_MIN, ELO_MAX].
  *
- * @param {number|null} acpl
+ * @param {number|null} accuracy
  * @returns {number|null}
  */
-export function estimateElo(acpl) {
-  if (acpl == null || Number.isNaN(acpl)) return null;
-  if (acpl <= ELO_CURVE[0][0]) return ELO_CURVE[0][1];
-  for (let i = 1; i < ELO_CURVE.length; i++) {
-    const [x1, y1] = ELO_CURVE[i - 1];
-    const [x2, y2] = ELO_CURVE[i];
-    if (acpl <= x2) {
-      const t = (acpl - x1) / (x2 - x1);
-      return Math.round(y1 + t * (y2 - y1));
-    }
-  }
-  return ELO_CURVE[ELO_CURVE.length - 1][1];
+export function estimateElo(accuracy) {
+  if (accuracy == null || Number.isNaN(accuracy)) return null;
+  const gap = 100 - accuracy;
+  if (gap <= 0) return ELO_MAX;
+  return Math.round(Math.max(ELO_MIN, Math.min(ELO_MAX, ELO_A + ELO_B / gap)));
 }
 
 /**
@@ -118,7 +125,7 @@ function bucketStats(bucket) {
   if (!bucket.count) return { accuracy: null, acpl: null, elo: null };
   const acpl = bucket.cpLossSum / bucket.count;
   const accuracy = bucket.accSum / bucket.count;
-  return { accuracy, acpl, elo: estimateElo(acpl) };
+  return { accuracy, acpl, elo: estimateElo(accuracy) };
 }
 
 /**
@@ -163,10 +170,13 @@ export function computeGameReview() {
     if (materialPhaseScore(node.fenAfter) <= ENDGAME_MATERIAL_THRESHOLD) inEndgame = true;
 
     const phase = inEndgame ? "endgame" : (node.ply <= openingEndPly ? "opening" : "middlegame");
-    const acc = moveAccuracy(node.cpLoss);
+    // Accuracy uses full cp loss (win% saturates on its own); ACPL caps
+    // outliers so one disaster move doesn't dominate the mean.
+    const acc = accuracyFromWinLoss(moveWinLoss(node.eval, side, node.cpLoss));
+    const cpLoss = Math.min(node.cpLoss, CP_LOSS_CAP);
 
-    addToBucket(sides[side].total, node.cpLoss, acc);
-    addToBucket(sides[side].byPhase[phase], node.cpLoss, acc);
+    addToBucket(sides[side].total, cpLoss, acc);
+    addToBucket(sides[side].byPhase[phase], cpLoss, acc);
 
     const label = node.evalData?.label;
     if (label) {

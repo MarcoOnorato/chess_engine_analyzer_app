@@ -57,6 +57,8 @@ function cardHtml(p) {
         <label>Games<input class="imp-count" type="number" value="10" min="1"></label>
         <label>Depth<input class="imp-depth" type="number" value="10" min="8" max="30"></label>
         <button class="pdb-btn pdb-btn-ghost pdb-btn-sm" data-act="import">Import games</button>
+        <button class="pdb-btn pdb-btn-ghost pdb-btn-sm" data-act="sync"
+                title="Fetch the latest games and add only the new ones, at the depth the rest use">↻ Sync latest</button>
       </div>
       <div class="pdb-progress-area hidden">
         <div class="pdb-progress"><div class="pdb-progress-fill"></div></div>
@@ -89,6 +91,36 @@ function wireCard(profile) {
   const importBtn = card.querySelector('[data-act="import"]');
   importBtn.onclick = () => runImport(profile, card);
   submitOnEnter([card.querySelector(".imp-count"), card.querySelector(".imp-depth")], importBtn);
+
+  card.querySelector('[data-act="sync"]').onclick = () => runSync(profile, card);
+}
+
+/**
+ * Incremental sync: one click, no fields. The backend reuses the profile's
+ * platform/username and dominant depth and adds only games not already stored.
+ */
+async function runSync(profile, card) {
+  if (!profile.platform || !profile.username) {
+    toast("This profile has no platform/username to sync from.", true);
+    return;
+  }
+  const importBtn = card.querySelector('[data-act="import"]');
+  const syncBtn = card.querySelector('[data-act="sync"]');
+  const buttons = [importBtn, syncBtn];
+  buttons.forEach((b) => { b.disabled = true; });
+  try {
+    const res = await api.syncIngest(profile.id, {});
+    if (res.nothing_new) {
+      toast(`Already up to date — nothing new for ${profile.label}.`);
+      buttons.forEach((b) => { b.disabled = false; });
+      return;
+    }
+    toast(`Syncing ${res.to_add} new game(s) for ${profile.label}…`);
+    pollJob(profile, card, res.job_id, buttons);
+  } catch (e) {
+    toast(e.message, true);
+    buttons.forEach((b) => { b.disabled = false; });
+  }
 }
 
 async function runImport(profile, card) {
@@ -99,28 +131,30 @@ async function runImport(profile, card) {
   const count = parseInt(card.querySelector(".imp-count").value, 10) || 20;
   const depth = parseInt(card.querySelector(".imp-depth").value, 10) || 14;
   const importBtn = card.querySelector('[data-act="import"]');
+  const syncBtn = card.querySelector('[data-act="sync"]');
+  const buttons = [importBtn, syncBtn];
   const payload = { platform: profile.platform, username: profile.username, count, depth };
 
-  importBtn.disabled = true;
+  buttons.forEach((b) => { b.disabled = true; });
   try {
     const preview = await api.previewIngest(profile.id, payload);
     let recompute = false;
 
     if (preview.depth_conflicts && preview.depth_conflicts.length) {
       const choice = await askConflict(preview.depth_conflicts.length, depth, preview.to_add);
-      if (!choice.proceed) { importBtn.disabled = false; return; }
+      if (!choice.proceed) { buttons.forEach((b) => { b.disabled = false; }); return; }
       recompute = choice.recompute;
     } else if (preview.to_add === 0) {
       toast(`Nothing new — ${preview.duplicates_same_depth} game(s) already stored at depth ${depth}.`);
-      importBtn.disabled = false;
+      buttons.forEach((b) => { b.disabled = false; });
       return;
     }
 
     const { job_id } = await api.startIngest(profile.id, { ...payload, recompute_conflicts: recompute });
-    pollJob(profile, card, job_id, importBtn);
+    pollJob(profile, card, job_id, buttons);
   } catch (e) {
     toast(e.message, true);
-    importBtn.disabled = false;
+    buttons.forEach((b) => { b.disabled = false; });
   }
 }
 
@@ -129,7 +163,8 @@ function emitJob(detail) {
   document.dispatchEvent(new CustomEvent("pdb:job", { detail }));
 }
 
-function pollJob(profile, card, jobId, importBtn) {
+function pollJob(profile, card, jobId, buttons) {
+  const btns = Array.isArray(buttons) ? buttons : [buttons];
   const area = card.querySelector(".pdb-progress-area");
   const fill = card.querySelector(".pdb-progress-fill");
   const label = card.querySelector(".pdb-progress-label");
@@ -152,7 +187,7 @@ function pollJob(profile, card, jobId, importBtn) {
 
   const finish = () => {
     clearInterval(timer);
-    importBtn.disabled = false;
+    btns.forEach((b) => { b.disabled = false; });
     cancelBtn.classList.add("hidden");
     cancelBtn.onclick = null;
     emitJob({ profileId: profile.id, active: false });

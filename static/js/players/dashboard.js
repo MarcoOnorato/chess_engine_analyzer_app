@@ -13,12 +13,14 @@ import { renderWinrate, renderPhase, renderQuality, renderTrend } from "./charts
 
 let _profileId = null;
 let _selectedTc = null; // null = all
-let _allGames = [];
 
-// Recent-games pagination state (page size persists across filter changes).
-let _filteredGames = [];
+// Recent-games pagination state. The page itself is fetched from the server
+// (only one page of rows crosses the wire); `_lastPageGames` keeps the rows on
+// screen so a review-depth tweak can relabel links without a round-trip.
 let _gamesPage = 1;
 let _gamesPageSize = 20;
+let _gamesTotal = 0;
+let _lastPageGames = [];
 
 const TC_LABELS = {
   ultraBullet: "UltraBullet", bullet: "Bullet", blitz: "Blitz", rapid: "Rapid",
@@ -54,10 +56,12 @@ function resultLabel(res) {
   return "--";
 }
 
-function renderKpis(k) {
+function renderKpis(k, moveQuality = {}) {
   const el = document.getElementById("kpis");
   const wr = k.winrate == null ? "--" : `${k.winrate}%`;
   const clickable = k.brilliant > 0 ? " pdb-kpi-clickable" : "";
+  const errors = (moveQuality.Blunder || 0) + (moveQuality.Miss || 0) + (moveQuality.Mistake || 0);
+  const errClickable = errors > 0 ? " pdb-kpi-clickable" : "";
   el.innerHTML = [
     kpiCard(k.games, "Games"),
     kpiCard(wr, `Win rate (${k.wins}-${k.draws}-${k.losses})`),
@@ -66,10 +70,15 @@ function renderKpis(k) {
     `<div id="kpiBrilliant" class="pdb-kpi${clickable}" title="${k.brilliant > 0 ? "Explore the brilliant moves" : ""}">` +
       `<div class="pdb-kpi-value">${k.brilliant}</div>` +
       `<div class="pdb-kpi-label">Brilliant moves</div></div>`,
+    `<div id="kpiErrors" class="pdb-kpi${errClickable}" title="${errors > 0 ? "Explore blunders & mistakes" : ""}">` +
+      `<div class="pdb-kpi-value">${errors}</div>` +
+      `<div class="pdb-kpi-label">Blunders &amp; mistakes</div></div>`,
   ].join("");
 
   const brilBtn = document.getElementById("kpiBrilliant");
   if (brilBtn && k.brilliant > 0) brilBtn.onclick = openBrilliants;
+  const errBtn = document.getElementById("kpiErrors");
+  if (errBtn && errors > 0) errBtn.onclick = openErrors;
 }
 
 /* -------------------------------------------------------------------------
@@ -134,6 +143,13 @@ function miniBoard(fen, color, uci) {
   return `<div class="pdb-mini">${cells}</div>`;
 }
 
+/** "⏱ 4.2s" think-time tag, or "" when the game carried no clocks. */
+function thinkTag(b) {
+  if (b.think_time == null) return "";
+  const t = b.think_time >= 10 ? Math.round(b.think_time) : b.think_time.toFixed(1);
+  return ` · ⏱ ${t}s`;
+}
+
 /** Position evaluation from the tracked player's perspective, as a short tag. */
 function evalLabel(b) {
   const sign = b.player_color === "black" ? -1 : 1;
@@ -161,7 +177,7 @@ function brilliantCard(b) {
       <div class="pdb-bril-move">${moveNo}${dots} ${esc(b.san)}!!</div>
       <div class="pdb-bril-meta">
         <div><span class="opp">${tcLabel(b.time_class)} vs ${esc(opp || "?")}</span></div>
-        <div>${date}${b.opening ? " · " + esc(b.opening) : ""}${ev ? " · " + ev : ""}</div>
+        <div>${date}${b.opening ? " · " + esc(b.opening) : ""}${ev ? " · " + ev : ""}${thinkTag(b)}</div>
       </div>
       <a class="pdb-btn pdb-btn-ghost pdb-btn-sm" href="${href}">Open in Review</a>
     </div>`;
@@ -196,6 +212,86 @@ async function openBrilliants() {
   body.innerHTML = moves.length
     ? moves.map(brilliantCard).join("")
     : `<div class="pdb-empty">No brilliant moves for this filter.</div>`;
+}
+
+/* -------------------------------------------------------------------------
+   Blunder / mistake explorer: the same modal grid as the brilliancies, but for
+   the tracked player's worst moves — each card shows what was played, what the
+   engine preferred, and how much it cost. Scoped to the active time filter.
+   ------------------------------------------------------------------------- */
+
+const ERROR_BADGE = {
+  Blunder: { sym: "??", cls: "blunder" },
+  Miss: { sym: "Ø", cls: "miss" },
+  Mistake: { sym: "?", cls: "mistake" },
+};
+
+function errorCard(b) {
+  const color = b.player_color === "black" ? "black" : "white";
+  const opp = b.player_color === "white" ? b.black : b.white;
+  const date = b.played_at ? b.played_at.slice(0, 10) : "";
+  const moveNo = Math.ceil(b.ply / 2);
+  const dots = b.ply % 2 === 1 ? "." : "...";
+  const ev = evalLabel(b);
+  const badge = ERROR_BADGE[b.label] || { sym: "?", cls: "mistake" };
+  const loss = b.cp_loss == null ? "" : `−${(b.cp_loss / 100).toFixed(1)}`;
+  const d = reviewDepth();
+  const href = `/?pgn_game=${b.game_id}&ply=${b.ply}${d ? `&depth=${d}` : ""}`;
+  const best = b.best_san ? `<span class="pdb-err-best">best: ${esc(b.best_san)}</span>` : "";
+  return `
+    <div class="pdb-bril-card pdb-err-card pdb-err-${badge.cls}">
+      ${miniBoard(b.fen_before, color, b.uci)}
+      <div class="pdb-bril-move">${moveNo}${dots} ${esc(b.san)}<span class="pdb-err-sym">${badge.sym}</span></div>
+      <div class="pdb-err-line">${best}${loss ? `<span class="pdb-err-loss">${loss}</span>` : ""}</div>
+      <div class="pdb-bril-meta">
+        <div><span class="opp">${tcLabel(b.time_class)} vs ${esc(opp || "?")}</span></div>
+        <div>${date}${b.opening ? " · " + esc(b.opening) : ""}${ev ? " · " + ev : ""}${thinkTag(b)}</div>
+      </div>
+      <a class="pdb-btn pdb-btn-ghost pdb-btn-sm" href="${href}">Open in Review</a>
+    </div>`;
+}
+
+function closeErrors() {
+  document.getElementById("errorsModal").classList.add("hidden");
+  document.removeEventListener("keydown", onErrorsKey);
+}
+
+function onErrorsKey(e) {
+  if (e.key === "Escape") closeErrors();
+}
+
+async function openErrors() {
+  const modal = document.getElementById("errorsModal");
+  const body = document.getElementById("errorsBody");
+  body.innerHTML = `<div class="pdb-empty">Loading…</div>`;
+  modal.classList.remove("hidden");
+
+  document.getElementById("errorsClose").onclick = closeErrors;
+  modal.onclick = (e) => { if (e.target === modal) closeErrors(); };
+  document.addEventListener("keydown", onErrorsKey);
+
+  // "Train on these" bridges to the Train-as-a-player flow for this profile.
+  const trainLink = document.getElementById("errorsTrain");
+  if (trainLink) trainLink.href = `/training?tap=${_profileId}`;
+
+  let moves;
+  try {
+    moves = await api.errors(_profileId, _selectedTc);
+  } catch (_) {
+    body.innerHTML = `<div class="pdb-empty">Could not load mistakes.</div>`;
+    return;
+  }
+  body.innerHTML = moves.length
+    ? moves.map(errorCard).join("")
+    : `<div class="pdb-empty">No blunders or mistakes for this filter. Nicely done.</div>`;
+}
+
+/** Downloads the profile's games (scoped to the active filter) as CSV. The
+ *  attachment header makes the browser save it without navigating away. */
+function exportGamesCsv() {
+  if (_profileId == null) return;
+  const q = _selectedTc ? `?time_class=${encodeURIComponent(_selectedTc)}` : "";
+  window.location.href = `/api/players/${_profileId}/games.csv${q}`;
 }
 
 function renderFilter(timeControls) {
@@ -242,6 +338,37 @@ function renderTimeControls(timeControls) {
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
+}
+
+const PHASE_LABEL = { opening: "Opening", middlegame: "Middlegame", endgame: "Endgame" };
+
+/** Renders the time-management card: seconds/move overall and per phase, plus
+ *  how many mistakes were made in time trouble. */
+function renderTimeManagement(tm) {
+  const el = document.getElementById("timeMgmt");
+  if (!el) return;
+  if (!tm || !tm.has_clocks) {
+    el.innerHTML = `<div class="pdb-empty">No clock data in these games (the source PGNs carried no move times).</div>`;
+    return;
+  }
+  const secs = (v) => (v == null ? "--" : `${v}s`);
+  const maxPhase = Math.max(1, ...tm.by_phase.map((p) => p.avg_think || 0));
+  const phaseRows = tm.by_phase.map((p) => {
+    const w = p.avg_think ? Math.round((p.avg_think / maxPhase) * 100) : 0;
+    return `
+      <div class="pdb-time-row">
+        <span class="pdb-time-phase">${PHASE_LABEL[p.phase] || p.phase}</span>
+        <span class="pdb-time-bar-wrap"><span class="pdb-time-bar" style="width:${w}%"></span></span>
+        <span class="pdb-time-val">${secs(p.avg_think)}<small>/move · ${p.moves} moves</small></span>
+      </div>`;
+  }).join("");
+
+  el.innerHTML = `
+    <div class="pdb-time-top">
+      <div class="pdb-time-kpi"><b>${secs(tm.avg_think)}</b><span>avg / move</span></div>
+      <div class="pdb-time-kpi"><b>${tm.time_trouble_errors}</b><span>mistakes under ${tm.time_trouble_seconds}s</span></div>
+    </div>
+    <div class="pdb-time-phases">${phaseRows}</div>`;
 }
 
 function renderOpenings(openings) {
@@ -319,29 +446,43 @@ function paginationHtml(page, totalPages, total, start, end) {
     </div>`;
 }
 
-/** Sets the games list to paginate and renders page 1. */
-function setGames(list) {
-  _filteredGames = list;
-  _gamesPage = 1;
+/** Fetches the current page of games (scoped to the active filter) and renders it. */
+async function fetchGamesPage() {
+  const size = Math.max(1, _gamesPageSize);
+  let resp;
+  try {
+    resp = await api.games(_profileId, {
+      timeClass: _selectedTc,
+      limit: size,
+      offset: (_gamesPage - 1) * size,
+    });
+  } catch (_) {
+    return;
+  }
+  _gamesTotal = resp.total || 0;
+
+  // The list may have shrunk (e.g. filter change): clamp and refetch once.
+  const totalPages = Math.max(1, Math.ceil(_gamesTotal / size));
+  if (_gamesPage > totalPages) {
+    _gamesPage = totalPages;
+    return fetchGamesPage();
+  }
+  _lastPageGames = resp.games || [];
   renderGamesPage();
 }
 
-/** Renders the current page of the recent-games table plus its controls. */
+/** Renders the last-fetched page of the recent-games table plus its controls. */
 function renderGamesPage() {
   const el = document.getElementById("gamesTable");
-  const list = _filteredGames;
-  if (!list.length) {
+  if (!_gamesTotal) {
     el.innerHTML = `<div class="pdb-empty">No games for this filter.</div>`;
     return;
   }
 
   const size = Math.max(1, _gamesPageSize);
-  const totalPages = Math.max(1, Math.ceil(list.length / size));
-  _gamesPage = Math.min(Math.max(1, _gamesPage), totalPages);
-
+  const totalPages = Math.max(1, Math.ceil(_gamesTotal / size));
   const start = (_gamesPage - 1) * size;
-  const end = Math.min(start + size, list.length);
-  const pageItems = list.slice(start, end);
+  const end = Math.min(start + _lastPageGames.length, _gamesTotal);
 
   el.innerHTML = `
     <table class="pdb-table">
@@ -349,9 +490,9 @@ function renderGamesPage() {
         <th>Date</th><th>Type</th><th>Opponent</th><th>Result</th><th>Opening</th>
         <th class="num">Acc.</th><th class="num">Elo</th><th class="num">Depth</th><th></th>
       </tr></thead>
-      <tbody>${gamesRowsHtml(pageItems)}</tbody>
+      <tbody>${gamesRowsHtml(_lastPageGames)}</tbody>
     </table>
-    ${paginationHtml(_gamesPage, totalPages, list.length, start, end)}`;
+    ${paginationHtml(_gamesPage, totalPages, _gamesTotal, start, end)}`;
 
   el.querySelectorAll(".pdb-pag-btn").forEach((b) => {
     if (b.disabled) return;
@@ -361,7 +502,7 @@ function renderGamesPage() {
       else if (action === "prev") _gamesPage -= 1;
       else if (action === "next") _gamesPage += 1;
       else if (action === "last") _gamesPage = totalPages;
-      renderGamesPage();
+      fetchGamesPage();
     };
   });
 
@@ -371,24 +512,23 @@ function renderGamesPage() {
       const v = parseInt(sizeInput.value, 10);
       _gamesPageSize = Number.isFinite(v) && v > 0 ? v : _gamesPageSize;
       _gamesPage = 1;
-      renderGamesPage();
+      fetchGamesPage();
     };
   }
 }
 
 /** Renders the filter-dependent parts (KPIs, charts, openings, phases, games). */
 function paintScoped(stats) {
-  renderKpis(stats.kpis);
+  renderKpis(stats.kpis, stats.move_quality);
   renderWinrate("chartWinrate", stats.winrate);
   renderPhase("chartPhase", stats.phases);
   renderQuality("chartQuality", stats.move_quality);
   renderTrend("chartTrend", stats.trend);
   renderOpenings(stats.openings);
+  renderTimeManagement(stats.time_management);
 
-  const games = _selectedTc
-    ? _allGames.filter((g) => (g.time_class || "unknown") === _selectedTc)
-    : _allGames;
-  setGames(games);
+  _gamesPage = 1;
+  fetchGamesPage();
 }
 
 async function selectTimeClass(tc) {
@@ -411,17 +551,25 @@ export async function renderDashboard(profileId) {
   _profileId = profileId;
   _selectedTc = null;
 
-  const [stats, games] = await Promise.all([api.stats(profileId), api.games(profileId)]);
-  _allGames = games;
+  const stats = await api.stats(profileId);
 
   const p = stats.profile || {};
   const titleEl = document.getElementById("dashTitle");
   const meta = [p.platform, p.username].filter(Boolean).join(" · ");
   titleEl.innerHTML = `${esc(p.label || "Player")}<small>${esc(meta)}</small>`;
 
-  // Changing the review depth only rewrites the row links/labels.
+  // Changing the review depth only rewrites the row links/labels of the page
+  // already on screen — no refetch needed.
   const depthEl = document.getElementById("reviewDepth");
   if (depthEl) depthEl.oninput = () => renderGamesPage();
+
+  // Bridge to the "Train as a player" flow for this profile.
+  const trainBtn = document.getElementById("dashTrainBtn");
+  if (trainBtn) trainBtn.href = `/training?tap=${profileId}`;
+
+  // CSV export follows the active time-control filter.
+  const exportBtn = document.getElementById("dashExportBtn");
+  if (exportBtn) exportBtn.onclick = () => exportGamesCsv();
 
   renderFilter(stats.time_controls);
   renderTimeControls(stats.time_controls);
@@ -438,15 +586,11 @@ export async function refreshDashboard() {
   if (_profileId == null) return;
   const page = _gamesPage;
 
-  const [stats, games] = await Promise.all([
-    api.stats(_profileId, _selectedTc),
-    api.games(_profileId),
-  ]);
-  _allGames = games;
+  const stats = await api.stats(_profileId, _selectedTc);
 
   renderFilter(stats.time_controls);
   renderTimeControls(stats.time_controls);
   paintScoped(stats); // resets to page 1
   _gamesPage = page;
-  renderGamesPage(); // clamps the page if the list shrank
+  fetchGamesPage(); // refetches and clamps the page if the list shrank
 }

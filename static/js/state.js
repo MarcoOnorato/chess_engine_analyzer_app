@@ -109,6 +109,7 @@ export const state = {
   gameResult: "",
   currentOpeningName: "Starting Position",
   playersPrefix: "",
+  hasClocks: false,   // true once a loaded game carried [%clk] move times
   is_moving: false,
   board: null,
   game_fen: STARTING_FEN,

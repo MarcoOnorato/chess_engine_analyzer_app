@@ -4,8 +4,8 @@ game-review pipeline so a stored game's numbers match what the Review page shows
 for the same game at the same depth.
 
 Sources of truth (keep in sync):
-  - move accuracy curve         -> static/js/accuracy.js  (moveAccuracy)
-  - ACPL -> estimated Elo curve  -> static/js/game-review.js (estimateElo, ELO_CURVE)
+  - win% + accuracy model        -> static/js/accuracy.js  (winPercent, moveAccuracy)
+  - accuracy -> estimated Elo     -> static/js/game-review.js (estimateElo)
   - phase detection thresholds   -> static/js/game-review.js
 """
 
@@ -14,17 +14,31 @@ from typing import Any
 
 from . import db
 
-# --- constants mirrored from the JS ---------------------------------------
+# --- win% + accuracy + Elo model (mirrored in the JS) ---------------------
+#
+# Accuracy is derived from *win-probability* loss, not raw centipawn loss. The
+# same centipawn swing is worth a lot near equality and almost nothing in an
+# already-decided position, so this is what makes "90% accuracy" mean very
+# different things at 400 vs 2700: a weak player's errors happen where win% is
+# volatile and get punished, so their accuracy can't inflate the way raw-cp
+# accuracy did.
 
-# accuracy.js: 100 * exp(-0.0055 * cpLoss), clamped to [0, 100]
-_ACCURACY_DECAY = 0.0055
+# Lichess win-probability logistic: centipawns (one side's POV) -> 0-100 win%.
+_WIN_PCT_K = 0.00368208
 
-# game-review.js ELO_CURVE (acpl, elo) control points, piecewise linear.
-ELO_CURVE = [
-    (0, 2900), (5, 2700), (10, 2500), (15, 2300), (20, 2100),
-    (30, 1900), (40, 1700), (50, 1500), (60, 1300), (80, 1100),
-    (100, 900), (150, 650), (250, 450),
-]
+# Lichess per-move accuracy from win% lost: 103.1668*exp(-0.04354*Δ)-3.1669.
+_ACC_A, _ACC_B, _ACC_C = 103.1668, 0.04354, 3.1669
+
+# Accuracy% -> estimated Elo. The relationship is strongly non-linear: win%-based
+# accuracy compresses hard near 100%, so Elo rises with the reciprocal of the
+# "imperfection" (100 - accuracy):
+#     elo = ELO_A + ELO_B / (100 - accuracy)      (clamped to [ELO_MIN, ELO_MAX])
+# A two-parameter least-squares fit to real Lichess ratings from ingested games:
+# a ~1300 blitz player scores ~85%, a ~1540 rapid player ~88%, and Carlsen
+# (DrNykterstein, 30 games) scores ~93.2% -> ~2800. Above ~94% it runs away, so
+# the clamp caps it at a superhuman ceiling.
+ELO_A, ELO_B = -90.0, 19800.0
+ELO_MIN, ELO_MAX = 250, 3200
 
 # game-review.js phase thresholds.
 MIN_OPENING_PLY = 20
@@ -35,26 +49,49 @@ MATERIAL_WEIGHTS = {"q": 9, "r": 5, "b": 3, "n": 3}
 PHASES = ["opening", "middlegame", "endgame"]
 
 
-def move_accuracy(cp_loss: float | None) -> float | None:
-    """accuracy.js::moveAccuracy — cp loss (centipawns) to accuracy in [0, 100]."""
+def win_percent(cp: float) -> float:
+    """accuracy.js::winPercent — centipawns (one side's POV) to a 0-100 win%."""
+    return 100.0 / (1.0 + math.exp(-_WIN_PCT_K * cp))
+
+
+def move_win_loss(eval_pawns: float | None, side: str, cp_loss: float | None) -> float | None:
+    """Win% the move gave away, from the mover's POV (>= 0).
+
+    `eval_pawns` is the stored position eval *after* the move (white's POV, in
+    pawns; mates are already ±100). `cp_loss` is how much better best play was,
+    in centipawns from the mover's POV — so the pre-move win% is that of the
+    position `cp_loss` better than what was reached. Mirrors game-review.js.
+    """
     if cp_loss is None:
         return None
-    return max(0.0, min(100.0, 100.0 * math.exp(-_ACCURACY_DECAY * cp_loss)))
+    after = (eval_pawns or 0.0) * 100.0            # white's POV, centipawns
+    after = after if side == "white" else -after   # mover's POV
+    before = after + cp_loss                        # best play was cp_loss better
+    return max(0.0, win_percent(before) - win_percent(after))
 
 
-def estimate_elo(acpl: float | None) -> int | None:
-    """game-review.js::estimateElo — piecewise-linear ACPL -> rough Elo."""
-    if acpl is None or math.isnan(acpl):
+def accuracy_from_win_loss(win_loss: float | None) -> float | None:
+    """accuracy.js::accuracyFromWinLoss — win% lost to a per-move accuracy [0,100]."""
+    if win_loss is None:
         return None
-    if acpl <= ELO_CURVE[0][0]:
-        return ELO_CURVE[0][1]
-    for i in range(1, len(ELO_CURVE)):
-        x1, y1 = ELO_CURVE[i - 1]
-        x2, y2 = ELO_CURVE[i]
-        if acpl <= x2:
-            t = (acpl - x1) / (x2 - x1)
-            return round(y1 + t * (y2 - y1))
-    return ELO_CURVE[-1][1]
+    acc = _ACC_A * math.exp(-_ACC_B * win_loss) - _ACC_C
+    return max(0.0, min(100.0, acc))
+
+
+def move_accuracy(eval_pawns: float | None, side: str, cp_loss: float | None) -> float | None:
+    """Context-aware per-move accuracy in [0, 100] (win%-loss based)."""
+    return accuracy_from_win_loss(move_win_loss(eval_pawns, side, cp_loss))
+
+
+def estimate_elo(accuracy: float | None) -> int | None:
+    """game-review.js::estimateElo — win%-based accuracy% -> rough Elo via
+    elo = ELO_A + ELO_B / (100 - accuracy), clamped to [ELO_MIN, ELO_MAX]."""
+    if accuracy is None or math.isnan(accuracy):
+        return None
+    gap = 100.0 - accuracy
+    if gap <= 0:
+        return ELO_MAX
+    return round(max(float(ELO_MIN), min(float(ELO_MAX), ELO_A + ELO_B / gap)))
 
 
 def material_phase_score(fen: str) -> int:
@@ -128,10 +165,12 @@ def aggregate_game(
             continue
         cp = m.get("cp_loss")
         if cp is not None:
-            cp_losses.append(cp)
-            acc = move_accuracy(cp)
+            # Accuracy uses the full cp_loss (win% saturates on its own); ACPL
+            # caps outliers so one disaster move doesn't dominate the mean.
+            acc = move_accuracy(m.get("eval"), m["side"], float(cp))
             if acc is not None:
                 accuracies.append(acc)
+            cp_losses.append(min(float(cp), db.CP_LOSS_CAP))
         label = m.get("label")
         if label:
             label_counts[label] = label_counts.get(label, 0) + 1
@@ -142,12 +181,66 @@ def aggregate_game(
     return {
         "accuracy": round(accuracy, 2) if accuracy is not None else None,
         "acpl": round(acpl, 2) if acpl is not None else None,
-        "est_elo": estimate_elo(acpl),
+        "est_elo": estimate_elo(accuracy),
         "moves_count": len(cp_losses),
         "label_counts": label_counts,
         "opening": game_opening_name(moves),
         "analysis_depth": depth,
     }
+
+
+def backfill_capped_aggregates() -> None:
+    """One-time migration to the win%-based accuracy / Elo model: fills each
+    move's `win_loss` and recomputes every game's capped ACPL, win%-based
+    accuracy and est_elo from already-stored per-move `eval` + `cp_loss`.
+
+    Runs without the engine — the per-move analysis is already stored — so games
+    imported before this model get correct figures without re-analysis. Guarded
+    by SQLite's `user_version` so it happens exactly once.
+    """
+    conn = db.get_conn()
+    # Bump this when the accuracy / Elo model changes so stored per-game figures
+    # are recomputed on next startup (v2: win%-based model; v3: reciprocal Elo
+    # fit). Recompute is engine-free — it reuses stored eval + cp_loss.
+    if conn.execute("PRAGMA user_version").fetchone()[0] >= 3:
+        return
+
+    for g in conn.execute("SELECT id, player_color FROM games").fetchall():
+        color = g["player_color"] or "white"
+        moves = db.moves_for_game(g["id"])
+
+        # Per-move win_loss for every move (both sides) so phase aggregation works.
+        for m in moves:
+            if m["cp_loss"] is None:
+                continue
+            wl = move_win_loss(m.get("eval"), m["side"], float(m["cp_loss"]))
+            conn.execute(
+                "UPDATE moves SET win_loss = ? WHERE game_id = ? AND ply = ?",
+                (round(wl, 4) if wl is not None else None, g["id"], m["ply"]),
+            )
+
+        tracked = [m for m in moves if m["side"] == color and m["cp_loss"] is not None]
+        if not tracked:
+            continue
+        cps = [min(float(m["cp_loss"]), db.CP_LOSS_CAP) for m in tracked]
+        acpl = sum(cps) / len(cps)
+        accs = [
+            a for a in (move_accuracy(m.get("eval"), m["side"], float(m["cp_loss"])) for m in tracked)
+            if a is not None
+        ]
+        accuracy = sum(accs) / len(accs) if accs else None
+        conn.execute(
+            "UPDATE games SET acpl = ?, accuracy = ?, est_elo = ? WHERE id = ?",
+            (
+                round(acpl, 2),
+                round(accuracy, 2) if accuracy is not None else None,
+                estimate_elo(accuracy),
+                g["id"],
+            ),
+        )
+
+    conn.execute("PRAGMA user_version = 3")
+    conn.commit()
 
 
 # --- dashboard aggregation -------------------------------------------------
@@ -184,7 +277,7 @@ def _summarize(games: list[dict[str, Any]]) -> dict[str, Any]:
         "winrate": round(100.0 * wdl["win"] / total, 1) if total else None,
         "avg_accuracy": avg_accuracy,
         "avg_acpl": avg_acpl,
-        "est_elo": estimate_elo(avg_acpl) if avg_acpl is not None else None,
+        "est_elo": estimate_elo(avg_accuracy) if avg_accuracy is not None else None,
     }
 
 
@@ -233,7 +326,7 @@ def build_dashboard(profile_id: int, time_class: str | None = None) -> dict[str,
         if res in ("win", "loss", "draw"):
             ob[res] += 1
 
-        for label, col in db._LABEL_COL.items():
+        for label, col in db.LABEL_COL.items():
             label_totals[label] = label_totals.get(label, 0) + int(g.get(col) or 0)
 
         if g.get("accuracy") is not None:
@@ -252,16 +345,37 @@ def build_dashboard(profile_id: int, time_class: str | None = None) -> dict[str,
     phases = []
     for ph in PHASES:
         r = phase_map.get(ph)
-        if r and r.get("avg_cp_loss") is not None:
-            acc = move_accuracy(r["avg_cp_loss"])
+        if r and r.get("avg_win_loss") is not None:
+            acc = accuracy_from_win_loss(r["avg_win_loss"])
             phases.append({
                 "phase": ph,
                 "accuracy": round(acc, 1) if acc is not None else None,
-                "est_elo": estimate_elo(r["avg_cp_loss"]),
+                "est_elo": estimate_elo(acc),
                 "moves": r.get("n", 0),
             })
         else:
             phases.append({"phase": ph, "accuracy": None, "est_elo": None, "moves": 0})
+
+    # time management from stored per-move clocks (tracked side only), filtered
+    tm = db.time_management_rows(profile_id, time_class)
+    tm_phase_map = {r["phase"]: r for r in tm["by_phase"] if r.get("phase")}
+    time_phases = []
+    for ph in PHASES:
+        r = tm_phase_map.get(ph)
+        avg = r["avg_think"] if r and r.get("avg_think") is not None else None
+        time_phases.append({
+            "phase": ph,
+            "avg_think": round(avg, 1) if avg is not None else None,
+            "moves": int(r["n"]) if r and r.get("n") else 0,
+        })
+    time_management = {
+        "has_clocks": tm["moves"] > 0,
+        "avg_think": round(tm["avg_think"], 1) if tm["avg_think"] is not None else None,
+        "moves": tm["moves"],
+        "by_phase": time_phases,
+        "time_trouble_seconds": tm["time_trouble_seconds"],
+        "time_trouble_errors": tm["time_trouble_errors"],
+    }
 
     trend.sort(key=lambda t: (t.get("played_at") or ""))
     openings_list = sorted(openings.values(), key=lambda o: o["games"], reverse=True)
@@ -286,4 +400,5 @@ def build_dashboard(profile_id: int, time_class: str | None = None) -> dict[str,
         "trend": trend,
         "phases": phases,
         "move_quality": label_totals,
+        "time_management": time_management,
     }

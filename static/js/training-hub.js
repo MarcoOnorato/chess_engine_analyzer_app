@@ -43,4 +43,9 @@ window.addEventListener("load", () => {
       ? `${profiles.length} tracked profile(s) available for "Train as a player".`
       : `No tracked profiles yet — create one in the Players tab to unlock "Train as a player".`;
   }).catch(() => {});
+
+  // Deep link from the Players dashboard: /training?tap=<profileId> opens the
+  // "Train as a player" flow straight on that profile.
+  const tap = new URLSearchParams(window.location.search).get("tap");
+  if (tap) openTrainAsPlayerModal({ onExit: showHub, profileId: tap });
 });

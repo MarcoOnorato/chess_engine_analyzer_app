@@ -73,6 +73,25 @@ def fingerprint(pgn: str) -> str:
     return hashlib.sha1(normalized.strip().encode("utf-8")).hexdigest()
 
 
+# --- clocks ----------------------------------------------------------------
+
+def _time_control_parts(game: chess.pgn.Game) -> tuple[float | None, int]:
+    """Base seconds and increment from the PGN `TimeControl` header.
+
+    "180+2" -> (180.0, 2); "600" -> (600.0, 0); "-" or correspondence
+    ("1/259200") -> (None, 0). The base seeds each side's clock so the very
+    first move's think time can be measured; the increment is added back on
+    every move (time spent = clock before - clock after + increment).
+    """
+    tc = (game.headers.get("TimeControl") or "").strip()
+    if not tc or tc == "-" or "/" in tc:
+        return None, 0
+    base_str, _, inc_str = tc.partition("+")
+    base = float(base_str) if base_str.isdigit() else None
+    increment = int(inc_str) if inc_str.isdigit() else 0
+    return base, increment
+
+
 # --- per-game analysis -----------------------------------------------------
 
 def analyze_game_moves(
@@ -82,7 +101,8 @@ def analyze_game_moves(
 ) -> list[dict[str, Any]] | None:
     """
     Analyses a game's main line and returns per-move dicts ready for storage:
-    { ply, side, san, uci, fen_before, fen_after, cp_loss, eval, label, phase }.
+    { ply, side, san, uci, fen_before, fen_after, cp_loss, eval, label, phase,
+      clock, think_time }.
     Returns None if the PGN has no usable moves, or if `cancel_check()` becomes
     truthy mid-game (the partial game is then abandoned, not stored).
     """
@@ -93,6 +113,13 @@ def analyze_game_moves(
     board = game.board()
     moves: list[dict[str, Any]] = []
 
+    # Clock tracking: `node` walks the main line in lockstep with the moves so
+    # each ply's remaining clock ([%clk]) is available; `prev_clock` remembers
+    # each side's last remaining time to derive the seconds spent on a move.
+    base, increment = _time_control_parts(game)
+    prev_clock: dict[str, float | None] = {"white": base, "black": base}
+    node: chess.pgn.GameNode = game
+
     for ply, mv in enumerate(game.mainline_moves(), start=1):
         if cancel_check and cancel_check():
             return None
@@ -101,6 +128,16 @@ def analyze_game_moves(
         uci = mv.uci()
         board.push(mv)
         fen_after = board.fen()
+
+        node = node.variation(0)
+        side = "white" if ply % 2 == 1 else "black"
+        clock = node.clock()  # remaining seconds after the move, or None
+        think_time: float | None = None
+        prev = prev_clock[side]
+        if clock is not None and prev is not None:
+            think_time = max(0.0, prev - clock + increment)
+        if clock is not None:
+            prev_clock[side] = clock
 
         result = analysis_core.analyze_move(
             fen=fen_after,
@@ -114,16 +151,18 @@ def analyze_game_moves(
         # training categoriser reads it off the previous ply.
         best = (result.get("top_moves") or [{}])[0]
 
+        cp_loss = max(0.0, float(result.get("best_eval_loss") or 0.0))
         moves.append({
             "ply": ply,
-            "side": "white" if ply % 2 == 1 else "black",
+            "side": side,
             "san": san,
             "uci": uci,
             "fen_before": fen_before,
             "fen_after": fen_after,
-            "cp_loss": max(0.0, float(result.get("best_eval_loss") or 0.0)),
+            "cp_loss": cp_loss,
             "eval": result.get("eval"),
             "eval_mate": result.get("eval_mate"),
+            "win_loss": stats.move_win_loss(result.get("eval"), side, cp_loss),
             "best_uci": best.get("uci"),
             "best_san": best.get("san"),
             "best_score": best.get("score"),
@@ -131,6 +170,8 @@ def analyze_game_moves(
             "label": label,
             "opening": result.get("opening"),
             "phase": None,
+            "clock": clock,
+            "think_time": think_time,
         })
 
     if not moves:
@@ -163,8 +204,8 @@ def _persist_game(profile_id: int, record: dict[str, Any], moves: list[dict[str,
     # persisted move rows don't carry 'opening'
     move_rows = [{k: m[k] for k in
                   ("ply", "side", "san", "uci", "fen_before", "fen_after", "cp_loss", "eval",
-                   "eval_mate", "best_uci", "best_san", "best_score", "best_mate",
-                   "label", "phase")}
+                   "eval_mate", "win_loss", "best_uci", "best_san", "best_score", "best_mate",
+                   "label", "phase", "clock", "think_time")}
                  for m in moves]
     db.replace_moves(game_id, move_rows)
 

@@ -116,6 +116,38 @@
     }
     
     #board { width: 100%; flex-grow: 1; }
+
+    /* Review-board clocks (shown only when the loaded game carried [%clk]). */
+    .clk {
+      width: 100%;
+      max-width: 70vh;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 6px 12px;
+      background: #1e1e1e;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #ddd;
+    }
+    #clockTop { margin-bottom: 8px; }
+    #clockBottom { margin-top: 8px; }
+    .clk-name { font-size: 0.9em; color: #bbb; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .clk-time {
+      font-variant-numeric: tabular-nums;
+      font-weight: bold;
+      font-size: 1.15em;
+      color: #eee;
+      background: #111;
+      padding: 2px 10px;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+    /* The side to move gets a green, brighter clock. */
+    .clk-active { border-color: #26bbff; }
+    .clk-active .clk-time { color: #0f0; background: #0d1a0d; }
     
     /* ==========================================================================
         RIGHT COLUMN (Controls, Analysis)

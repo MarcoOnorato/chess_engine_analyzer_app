@@ -185,7 +185,7 @@ export async function analysePlayerGames(pgns, playerName, depth = 12, onProgres
  * @returns {Promise<PlayerAnalysisResult & {staleGames:number, totalGames:number}>}
  */
 export async function analyseProfileGames(profileId, onProgress) {
-  const games = await api.get(`/api/players/${profileId}/games`);
+  const { games } = await api.get(`/api/players/${profileId}/games`);
 
   const byCategory = {
     [PLAYER_ERROR_TYPES.HANGING_PIECE]:  [],

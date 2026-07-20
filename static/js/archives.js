@@ -33,10 +33,11 @@ const DRAW = "½-½";
  * @throws {Error} If the user does not exist or the API rejects the request.
  */
 export async function fetchLichessGames(username, count = 10) {
-  // pgnInJson=true so the PGN arrives inside each JSON record.
+  // pgnInJson=true so the PGN arrives inside each JSON record; clocks=true keeps
+  // the [%clk] move times so the Review board can show each side's clock.
   const res = await fetch(
     `https://lichess.org/api/games/user/${encodeURIComponent(username)}` +
-      `?max=${encodeURIComponent(count)}&pgnInJson=true`,
+      `?max=${encodeURIComponent(count)}&pgnInJson=true&clocks=true`,
     { headers: { Accept: "application/x-ndjson" } }
   );
   if (!res.ok) throw new Error("Lichess user not found or API error.");

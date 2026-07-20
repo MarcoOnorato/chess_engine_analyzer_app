@@ -31,7 +31,7 @@ def test_deleting_a_profile_cascades_to_its_games(temp_db):
 
 # --- games -----------------------------------------------------------------
 
-def _store_game(db, profile_id, pgn, fingerprint=None, depth=14, **aggregate_overrides):
+def _store_game(db, profile_id, pgn, fingerprint=None, depth=14, time_class="blitz", **aggregate_overrides):
     meta = {
         "pgn": pgn,
         "pgn_fingerprint": fingerprint or pgn,
@@ -40,7 +40,7 @@ def _store_game(db, profile_id, pgn, fingerprint=None, depth=14, **aggregate_ove
         "result": "1-0",
         "player_color": "white",
         "player_result": "win",
-        "time_class": "blitz",
+        "time_class": time_class,
     }
     aggregates = {
         "accuracy": 90.0, "acpl": 12.0, "est_elo": 2000, "moves_count": 30,
@@ -99,6 +99,24 @@ def test_games_are_listed_most_recent_first(temp_db):
     assert played == ["2024-01-01", "2020-01-01"]
 
 
+def test_games_can_be_paginated_server_side(temp_db):
+    pid = temp_db.create_profile("Me")
+    for i in range(5):
+        _store_game(temp_db, pid, f"g{i}", fingerprint=f"fp{i}")
+    assert temp_db.count_games(pid) == 5
+    assert len(temp_db.games_for_profile(pid, limit=2, offset=0)) == 2
+    assert len(temp_db.games_for_profile(pid, limit=2, offset=4)) == 1  # last page
+
+
+def test_games_and_count_can_be_filtered_by_time_control(temp_db):
+    pid = temp_db.create_profile("Me")
+    _store_game(temp_db, pid, "blitz1", fingerprint="b1", time_class="blitz")
+    _store_game(temp_db, pid, "bullet1", fingerprint="u1", time_class="bullet")
+    assert temp_db.count_games(pid, "blitz") == 1
+    assert temp_db.count_games(pid, "bullet") == 1
+    assert [g["time_class"] for g in temp_db.games_for_profile(pid, "blitz")] == ["blitz"]
+
+
 def test_lookup_by_fingerprint_is_scoped_to_the_profile(temp_db):
     a = temp_db.create_profile("A")
     b = temp_db.create_profile("B")
@@ -113,8 +131,8 @@ def _move_rows(count=3, phase="opening"):
     return [{
         "ply": i, "side": "white" if i % 2 else "black", "san": "e4", "uci": "e2e4",
         "fen_before": "f1", "fen_after": "f2", "cp_loss": float(i * 10), "eval": 0.1,
-        "eval_mate": None, "best_uci": "e2e4", "best_san": "e4", "best_score": 0.2,
-        "best_mate": None, "label": "Best", "phase": phase,
+        "eval_mate": None, "win_loss": float(i), "best_uci": "e2e4", "best_san": "e4",
+        "best_score": 0.2, "best_mate": None, "label": "Best", "phase": phase,
     } for i in range(1, count + 1)]
 
 
@@ -191,6 +209,58 @@ def test_brilliant_moves_can_be_filtered_by_time_control(temp_db):
     temp_db.replace_moves(gid, _brilliant_rows())
     assert len(temp_db.brilliant_moves(pid, "blitz")) == 2
     assert temp_db.brilliant_moves(pid, "bullet") == []
+
+
+# --- error moves (blunder explorer) ----------------------------------------
+
+def test_error_moves_collects_the_tracked_sides_worst_moves_heaviest_first(temp_db):
+    pid = temp_db.create_profile("Me")   # player_color is "white"
+    gid = _store_game(temp_db, pid, "1. e4")
+    rows = _move_rows(4)
+    rows[0].update(label="Mistake", cp_loss=120.0, san="Qh5")   # white
+    rows[1].update(label="Blunder", cp_loss=900.0, san="Kf2")   # black: excluded
+    rows[2].update(label="Blunder", cp_loss=500.0, san="Bd3")   # white
+    temp_db.replace_moves(gid, rows)
+
+    got = temp_db.error_moves(pid)
+    assert [m["san"] for m in got] == ["Bd3", "Qh5"]   # tracked side, worst first
+    assert got[0]["label"] == "Blunder"
+
+
+def test_error_moves_can_be_filtered_by_time_control(temp_db):
+    pid = temp_db.create_profile("Me")
+    gid = _store_game(temp_db, pid, "1. e4")   # blitz
+    rows = _move_rows(2)
+    rows[0].update(label="Blunder", cp_loss=400.0)
+    temp_db.replace_moves(gid, rows)
+    assert len(temp_db.error_moves(pid, "blitz")) == 1
+    assert temp_db.error_moves(pid, "bullet") == []
+
+
+# --- time management -------------------------------------------------------
+
+def test_time_management_measures_think_time_and_time_trouble(temp_db):
+    pid = temp_db.create_profile("Me")   # player_color is "white"
+    gid = _store_game(temp_db, pid, "1. e4")
+    rows = _move_rows(4)
+    rows[0].update(think_time=8.0, clock=100.0, phase="opening")        # white
+    rows[2].update(think_time=2.0, clock=10.0, label="Blunder",
+                   phase="middlegame")                                  # white, rushed
+    temp_db.replace_moves(gid, rows)
+
+    tm = temp_db.time_management_rows(pid)
+    assert tm["moves"] == 2            # only the tracked side's clocked moves
+    assert tm["avg_think"] == 5.0      # (8 + 2) / 2
+    assert tm["time_trouble_errors"] == 1   # the blunder played with 10s left
+
+
+def test_time_management_is_empty_without_clocks(temp_db):
+    pid = temp_db.create_profile("Me")
+    gid = _store_game(temp_db, pid, "1. e4")
+    temp_db.replace_moves(gid, _move_rows(4))   # no clock/think_time set
+    tm = temp_db.time_management_rows(pid)
+    assert tm["moves"] == 0
+    assert tm["avg_think"] is None
 
 
 # --- jobs ------------------------------------------------------------------

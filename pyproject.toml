@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "chess-engine-analyzer"
 version = "1.0.0"
@@ -7,6 +11,13 @@ dependencies = [
     "Flask==3.1.3",
     "python-chess==1.999",
 ]
+
+# The app runs as scripts from the project root (python app.py), not as an
+# imported package, so the build only needs to carry the top-level modules and
+# the player_db package — enough for `pip install .` to resolve dependencies.
+[tool.setuptools]
+py-modules = ["app", "analysis_core"]
+packages = ["player_db"]
 
 [project.optional-dependencies]
 dev = [

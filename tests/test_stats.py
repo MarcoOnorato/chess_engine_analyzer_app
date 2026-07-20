@@ -4,41 +4,61 @@ import chess
 
 from player_db import stats
 
-# --- move_accuracy ---------------------------------------------------------
+# --- win% + move_accuracy --------------------------------------------------
+
+def test_win_percent_is_50_at_equality_and_monotonic():
+    assert stats.win_percent(0) == 50.0
+    assert stats.win_percent(-500) < stats.win_percent(0) < stats.win_percent(500)
+
 
 def test_move_accuracy_perfect_move_is_100():
-    assert stats.move_accuracy(0.0) == 100.0
+    # No cp lost -> no win% lost -> (essentially) full accuracy.
+    assert stats.move_accuracy(0.3, "white", 0.0) > 99.9
 
 
-def test_move_accuracy_decays_monotonically():
-    values = [stats.move_accuracy(cp) for cp in (0, 10, 50, 100, 300)]
+def test_move_accuracy_decays_as_cp_loss_grows():
+    values = [stats.move_accuracy(0.0, "white", cp) for cp in (0, 10, 50, 100, 300)]
     assert values == sorted(values, reverse=True)
 
 
+def test_move_accuracy_is_context_aware():
+    # The same 150cp slip costs almost no win% in a decided position (eval +8),
+    # but a lot near equality (eval 0) — so accuracy is far higher when winning.
+    decided = stats.move_accuracy(8.0, "white", 150.0)
+    balanced = stats.move_accuracy(0.0, "white", 150.0)
+    assert decided > balanced
+
+
 def test_move_accuracy_is_clamped_to_range():
-    assert stats.move_accuracy(100_000) >= 0.0
-    assert stats.move_accuracy(-100_000) <= 100.0
+    assert stats.move_accuracy(0.0, "white", 100_000) >= 0.0
+    assert stats.move_accuracy(0.0, "white", -100_000) <= 100.0
 
 
-def test_move_accuracy_passes_none_through():
-    assert stats.move_accuracy(None) is None
+def test_move_accuracy_passes_none_cp_loss_through():
+    assert stats.move_accuracy(0.0, "white", None) is None
 
 
 # --- estimate_elo ----------------------------------------------------------
 
-def test_estimate_elo_at_curve_endpoints():
-    assert stats.estimate_elo(0) == stats.ELO_CURVE[0][1]
-    assert stats.estimate_elo(10_000) == stats.ELO_CURVE[-1][1]
+def test_estimate_elo_clamps_at_bounds():
+    assert stats.estimate_elo(0) == stats.ELO_MIN      # runaway-low -> floor
+    assert stats.estimate_elo(100) == stats.ELO_MAX    # perfect -> ceiling (no div by zero)
 
 
-def test_estimate_elo_interpolates_between_control_points():
-    # Midway between (0, 2900) and (5, 2700).
-    assert stats.estimate_elo(2.5) == 2800
+def test_estimate_elo_follows_the_reciprocal_curve():
+    # elo = ELO_A + ELO_B / (100 - acc); at acc=90 the gap is 10.
+    assert stats.estimate_elo(90) == round(stats.ELO_A + stats.ELO_B / 10)
 
 
-def test_estimate_elo_decreases_as_acpl_grows():
-    values = [stats.estimate_elo(acpl) for acpl in (5, 20, 50, 100)]
-    assert values == sorted(values, reverse=True)
+def test_estimate_elo_increases_with_accuracy():
+    values = [stats.estimate_elo(acc) for acc in (30, 50, 70, 90)]
+    assert values == sorted(values)
+
+
+def test_estimate_elo_maps_grandmaster_accuracy_high():
+    # Carlsen (DrNykterstein) averages ~93.2% win%-based accuracy — must read as
+    # a super-GM (~2800), not ~2260.
+    assert 2700 <= stats.estimate_elo(93.2) <= 2900
 
 
 def test_estimate_elo_handles_none_and_nan():
@@ -156,6 +176,42 @@ def test_aggregate_game_accuracy_tracks_cp_loss():
     clean = stats.aggregate_game([_analyzed(1, "white", 0.0, "Best")], "white", 14)
     sloppy = stats.aggregate_game([_analyzed(1, "white", 300.0, "Blunder")], "white", 14)
     assert clean["accuracy"] > sloppy["accuracy"]
+
+
+def test_aggregate_game_caps_catastrophic_moves_in_acpl():
+    # One disaster (a missed mate) must not dominate the average: it is capped.
+    moves = [
+        _analyzed(1, "white", 10.0, "Good"),
+        _analyzed(3, "white", 10.0, "Good"),
+        _analyzed(5, "white", 10.0, "Good"),
+        _analyzed(7, "white", 9000.0, "Blunder"),
+    ]
+    agg = stats.aggregate_game(moves, "white", 14)
+    # 9000 capped to 1000 -> (10 + 10 + 10 + 1000) / 4 = 257.5, not ~2257.
+    assert agg["acpl"] == 257.5
+
+
+def test_backfill_recomputes_capped_aggregates_exactly_once(temp_db):
+    pid = temp_db.create_profile("Me")
+    gid = temp_db.upsert_game(
+        pid,
+        {"pgn": "x", "pgn_fingerprint": "x", "player_color": "white"},
+        {"analysis_depth": 14, "label_counts": {}, "acpl": 2257.5, "est_elo": 450},
+    )
+    temp_db.replace_moves(gid, [
+        {"ply": 1, "side": "white", "cp_loss": 10.0},
+        {"ply": 3, "side": "white", "cp_loss": 9000.0},   # capped to 1000
+        {"ply": 2, "side": "black", "cp_loss": 5.0},      # opponent, ignored
+    ])
+
+    stats.backfill_capped_aggregates()
+    assert temp_db.get_game(gid)["acpl"] == 505.0   # (10 + 1000) / 2
+
+    # Guarded by user_version: a second run must not touch anything.
+    temp_db.get_conn().execute("UPDATE games SET acpl = 999 WHERE id = ?", (gid,))
+    temp_db.get_conn().commit()
+    stats.backfill_capped_aggregates()
+    assert temp_db.get_game(gid)["acpl"] == 999
 
 
 # --- _summarize ------------------------------------------------------------

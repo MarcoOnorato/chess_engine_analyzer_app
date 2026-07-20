@@ -150,6 +150,7 @@ export async function loadPgn(directPgn = null, stored = null) {
 
     // --- 3. Analyze every node (dedup'd by fenAfter). ---
     const allNodes = collectNodesDFS(state.root).filter((n) => n.parent !== null);
+    state.hasClocks = allNodes.some((n) => n.clock != null);
     await analyzeAllNodes(allNodes, depth, loadingText, stored);
 
     // --- 4. Cursor at tip of main line. Render everything. ---
@@ -244,6 +245,7 @@ function createNode(parent, backend) {
     opening: null,
     comment: backend.comment || "",
     nags: backend.nags || [],
+    clock: backend.clock ?? null,
   };
 }
 
@@ -275,6 +277,7 @@ function buildLinearChain(moves, fens, root) {
       opening: null,
       comment: "",
       nags: [],
+      clock: moves[i].clock ?? null,
     };
     parent.children.push(node);
     indexNode(node);

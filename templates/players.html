@@ -55,6 +55,10 @@
     <div class="pdb-head">
       <button id="backToProfiles" class="pdb-btn pdb-btn-ghost">← Players</button>
       <div id="dashTitle" class="pdb-dash-title"></div>
+      <div class="pdb-head-actions">
+        <button id="dashExportBtn" class="pdb-btn pdb-btn-ghost pdb-btn-sm" title="Download this dashboard's games as CSV">⭳ Export CSV</button>
+        <a id="dashTrainBtn" class="pdb-btn pdb-btn-ghost pdb-btn-sm" href="#" title="Drill this player's most common mistakes">🎯 Train on mistakes</a>
+      </div>
     </div>
 
     <div id="dashJobBanner" class="pdb-job-banner hidden">
@@ -87,6 +91,10 @@
       <div class="pdb-card pdb-chart pdb-chart-wide">
         <h3>Openings played</h3>
         <div id="openingsTable" class="pdb-openings"></div>
+      </div>
+      <div class="pdb-card pdb-chart pdb-chart-wide">
+        <h3>Time management</h3>
+        <div id="timeMgmt" class="pdb-time"></div>
       </div>
     </div>
 
@@ -129,6 +137,20 @@
       <button id="brilliantsClose" class="pdb-btn pdb-btn-ghost pdb-btn-sm">Close</button>
     </div>
     <div id="brilliantsBody" class="pdb-brilliants-grid"></div>
+  </div>
+</div>
+
+<!-- ============ BLUNDER / MISTAKE EXPLORER ============ -->
+<div id="errorsModal" class="pdb-modal hidden">
+  <div class="pdb-modal-box pdb-brilliants-box">
+    <div class="pdb-brilliants-head">
+      <h3>⚠ Blunders &amp; mistakes</h3>
+      <div class="pdb-errors-head-actions">
+        <a id="errorsTrain" class="pdb-btn pdb-btn-ghost pdb-btn-sm" href="#">Train on these</a>
+        <button id="errorsClose" class="pdb-btn pdb-btn-ghost pdb-btn-sm">Close</button>
+      </div>
+    </div>
+    <div id="errorsBody" class="pdb-brilliants-grid"></div>
   </div>
 </div>
 

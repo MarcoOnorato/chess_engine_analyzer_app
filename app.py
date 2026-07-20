@@ -191,23 +191,30 @@ def _serialize_pgn_node(
         "fenAfter": fen_after,
         "comment": pgn_node.comment or "",
         "nags": sorted(pgn_node.nags),
+        # Remaining clock (seconds) after this move, from the PGN [%clk] tag, or
+        # None when the source carried no clocks. Lets the Review board show time.
+        "clock": pgn_node.clock(),
         "children": children,
     }
 
 
 def _flatten_main_line(
     game: chess.pgn.Game,
-) -> tuple[list[dict[str, str]], list[str]]:
+) -> tuple[list[dict[str, Any]], list[str]]:
     """
     Returns the main-line moves and FENs as the legacy flat lists used by
     older frontends.
     """
     board = game.board()
-    moves: list[dict[str, str]] = []
+    moves: list[dict[str, Any]] = []
     fens: list[str] = [board.fen()]
 
-    for mv in game.mainline_moves():
-        moves.append({"uci": mv.uci(), "san": board.san(mv)})
+    node: chess.pgn.GameNode = game
+    while node.variations:
+        node = node.variation(0)
+        mv = node.move
+        assert mv is not None
+        moves.append({"uci": mv.uci(), "san": board.san(mv), "clock": node.clock()})
         board.push(mv)
         fens.append(board.fen())
 

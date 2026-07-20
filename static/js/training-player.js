@@ -76,6 +76,9 @@ let onClose = null;
 /**
  * @param {Object} [opts]
  * @param {() => void} [opts.onExit] - Called when the user leaves the flow.
+ * @param {number|string} [opts.profileId] - Skip the picker and drill this
+ *        profile straight away (used by the "Train on mistakes" bridge from the
+ *        Players dashboard, /training?tap=<id>).
  */
 export function openTrainAsPlayerModal(opts = {}) {
   const modal = document.getElementById(MODAL_ID);
@@ -88,7 +91,24 @@ export function openTrainAsPlayerModal(opts = {}) {
 
   modal.classList.remove("hidden");
   setHeader("Train as a Player", closeModal);
-  renderProfileScreen();
+  if (opts.profileId != null) {
+    autoSelectProfile(opts.profileId);
+  } else {
+    renderProfileScreen();
+  }
+}
+
+/** Jumps past the picker to a specific profile; falls back to the picker if it
+ *  has no analyzed games (or can't be found). */
+function autoSelectProfile(profileId) {
+  const root = body();
+  root.innerHTML = "<div class='dim' style='padding:24px'>Loading profile…</div>";
+  api.get("/api/players").then((profiles) => {
+    const p = profiles.find((x) => String(x.id) === String(profileId));
+    if (!p || !p.games_count) { renderProfileScreen(); return; }
+    selectedProfile = p;
+    renderAnalysingScreen(p);
+  }).catch(() => renderProfileScreen());
 }
 
 /* ─── Modal shell helpers ────────────────────────────────────────────────── */

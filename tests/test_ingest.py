@@ -1,8 +1,27 @@
 """Ingest planning, cancellation and job orchestration — no engine, no network."""
 
+import io
+
+import chess.pgn
 import pytest
 
 from player_db import ingest
+
+# --- clock / time-control parsing ------------------------------------------
+
+def _game_with_tc(time_control):
+    pgn = f'[TimeControl "{time_control}"]\n\n1. e4 e5 *'
+    return chess.pgn.read_game(io.StringIO(pgn))
+
+
+def test_time_control_parts_reads_base_and_increment():
+    assert ingest._time_control_parts(_game_with_tc("180+2")) == (180.0, 2)
+    assert ingest._time_control_parts(_game_with_tc("600")) == (600.0, 0)
+
+
+def test_time_control_parts_ignores_unclocked_and_correspondence():
+    assert ingest._time_control_parts(_game_with_tc("-")) == (None, 0)
+    assert ingest._time_control_parts(_game_with_tc("1/259200")) == (None, 0)
 
 # --- cancellation registry -------------------------------------------------
 

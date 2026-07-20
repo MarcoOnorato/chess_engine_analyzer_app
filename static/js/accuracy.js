@@ -1,8 +1,13 @@
 /**
  * @fileoverview Post-game accuracy panel: per-side accuracy and evaluation chart.
  *
- * Accuracy uses the standard exponential decay model on centipawn loss:
- *   accuracy(cpLoss) = 100 * exp(-0.0055 * cpLoss),  clamped to [0, 100]
+ * Accuracy uses the Lichess win-probability model, not raw centipawn loss: a
+ * move's penalty is the *win %* it gave away, so the same centipawn swing costs
+ * a lot near equality and almost nothing in an already-decided position. This
+ * is why the same accuracy means very different things at 400 vs 2700.
+ *   winPercent(cp) = 100 / (1 + exp(-0.00368208 * cp))
+ *   accuracy(Δwin%) = 103.1668 * exp(-0.04354 * Δwin%) - 3.1669,  clamped [0,100]
+ * Kept in sync with player_db/stats.py.
  *
  * Both the accuracy values and the eval chart are computed from the *main
  * line* of the tree (the children[0] path from root). Variations the user
@@ -16,14 +21,55 @@
 
 import { state, mainLineNodes } from "./state.js";
 
+const WIN_PCT_K = 0.00368208;
+const ACC_A = 103.1668;
+const ACC_B = 0.04354;
+const ACC_C = 3.1669;
+
 /**
- * Maps a centipawn loss for a single move to an accuracy score in [0, 100].
+ * Lichess win-probability model: centipawns (one side's POV) → a 0–100 win %.
+ * @param {number} cp
+ * @returns {number}
+ */
+export function winPercent(cp) {
+  return 100 / (1 + Math.exp(-WIN_PCT_K * cp));
+}
+
+/**
+ * Win % a move gave away, from the mover's POV (≥ 0).
  *
- * @param {number} cpLoss - Centipawn loss compared to the engine's best move.
+ * @param {number|null} evalPawns - Position eval *after* the move (White's POV,
+ *   pawns; mates are already ±100).
+ * @param {string} side - "white" or "black" (the side that moved).
+ * @param {number} cpLoss - Centipawns better play would have kept (mover's POV).
+ * @returns {number}
+ */
+export function moveWinLoss(evalPawns, side, cpLoss) {
+  let after = (evalPawns || 0) * 100;              // White's POV, centipawns
+  if (side !== "white") after = -after;            // mover's POV
+  const before = after + cpLoss;                   // best play was cpLoss better
+  return Math.max(0, winPercent(before) - winPercent(after));
+}
+
+/**
+ * Maps win % lost to an accuracy score in [0, 100].
+ * @param {number} winLoss
+ * @returns {number}
+ */
+export function accuracyFromWinLoss(winLoss) {
+  return Math.max(0, Math.min(100, ACC_A * Math.exp(-ACC_B * winLoss) - ACC_C));
+}
+
+/**
+ * Context-aware accuracy for a single move in [0, 100].
+ *
+ * @param {number|null} evalPawns - Position eval after the move (White's POV, pawns).
+ * @param {string} side - "white" or "black".
+ * @param {number} cpLoss - Centipawn loss vs. the engine's best move.
  * @returns {number} Accuracy percentage (0–100).
  */
-export function moveAccuracy(cpLoss) {
-  return Math.max(0, Math.min(100, 100 * Math.exp(-0.0055 * cpLoss)));
+export function moveAccuracy(evalPawns, side, cpLoss) {
+  return accuracyFromWinLoss(moveWinLoss(evalPawns, side, cpLoss));
 }
 
 /**
@@ -39,7 +85,8 @@ export function calculateGameAccuracy() {
 
   ml.forEach((node) => {
     if (node.cpLoss == null) return;
-    const acc = moveAccuracy(node.cpLoss);
+    const side = node.ply % 2 === 1 ? "white" : "black";
+    const acc = moveAccuracy(node.eval, side, node.cpLoss);
     if (node.ply % 2 === 1) whiteScores.push(acc);
     else blackScores.push(acc);
   });

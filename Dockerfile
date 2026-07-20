@@ -22,15 +22,18 @@ RUN apt-get update && apt-get install -y \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir flask python-chess
-
 # APP WORKDIR
+COPY pyproject.toml /app/
 COPY app.py /app/
 COPY analysis_core.py /app/
 COPY player_db /app/player_db
 COPY templates /app/templates
 COPY static /app/static
 COPY --from=prep /temp_stockfish/ /app/
+
+# Dependencies come from pyproject.toml (single source of truth). Installing the
+# project also pins Flask / python-chess exactly as declared there.
+RUN pip install --no-cache-dir .
 
 ENV STOCKFISH_PATH=/app/${STOCKFISH_BINARY}
 

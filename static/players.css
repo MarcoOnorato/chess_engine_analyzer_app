@@ -28,6 +28,7 @@ body {
 
 .pdb-head h1 { margin: 0 0 4px; font-size: 1.6em; color: #ebf8ff; }
 .pdb-sub { margin: 0; color: #9fb3c8; font-size: 0.9em; max-width: 720px; }
+.pdb-head-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 
 .pdb-card {
   background: rgba(9, 18, 33, 0.72);
@@ -232,6 +233,33 @@ body {
 .pdb-bril-meta { font-size: 0.78em; color: #9fb3c8; line-height: 1.35; }
 .pdb-bril-meta .opp { color: #cfe6f5; }
 .pdb-bril-card .pdb-btn { margin-top: auto; text-align: center; }
+
+/* --- blunder / mistake explorer (reuses the brilliancy grid + mini-board) --- */
+.pdb-errors-head-actions { display: flex; gap: 8px; align-items: center; }
+.pdb-err-card .pdb-bril-move { color: #f0f4f8; }
+.pdb-err-sym { margin-left: 4px; font-weight: 800; }
+.pdb-err-blunder { border-color: rgba(179, 52, 48, 0.5); }
+.pdb-err-blunder .pdb-err-sym { color: #ef6b62; }
+.pdb-err-miss { border-color: rgba(255, 119, 105, 0.5); }
+.pdb-err-miss .pdb-err-sym { color: #ff9a8f; }
+.pdb-err-mistake { border-color: rgba(230, 145, 44, 0.5); }
+.pdb-err-mistake .pdb-err-sym { color: #f0a94b; }
+.pdb-err-line { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 0.82em; }
+.pdb-err-best { color: #8fd19e; }
+.pdb-err-loss { color: #ef6b62; font-weight: 700; }
+
+/* --- time management card --- */
+.pdb-time-top { display: flex; gap: 28px; margin-bottom: 14px; }
+.pdb-time-kpi { display: flex; flex-direction: column; }
+.pdb-time-kpi b { font-size: 1.5em; color: #ebf8ff; }
+.pdb-time-kpi span { font-size: 0.78em; color: #9fb3c8; }
+.pdb-time-phases { display: flex; flex-direction: column; gap: 8px; }
+.pdb-time-row { display: grid; grid-template-columns: 92px 1fr auto; align-items: center; gap: 10px; }
+.pdb-time-phase { font-size: 0.85em; color: #cfe6f5; }
+.pdb-time-bar-wrap { background: rgba(56, 189, 248, 0.12); border-radius: 5px; height: 10px; overflow: hidden; }
+.pdb-time-bar { display: block; height: 100%; background: #38bdf8; border-radius: 5px; }
+.pdb-time-val { font-size: 0.82em; color: #ebf8ff; white-space: nowrap; }
+.pdb-time-val small { color: #9fb3c8; margin-left: 4px; }
 
 /* Unicode mini-board rendered from a FEN (no assets). */
 .pdb-mini {
